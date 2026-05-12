@@ -2,155 +2,451 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>LED Matrix</title>
+<title>LED Matrix Prototyper</title>
 <style>
+  :root {
+    --bg: #050507;
+    --panel: #0c0c11;
+    --ink: #d8d8e0;
+    --muted: #6f6f7d;
+    --accent: #ff9f43;
+    --line: #1c1c25;
+  }
+  * { box-sizing: border-box; }
   html, body {
     margin: 0;
     height: 100%;
-    background: #0a0a0f;
-    display: grid;
-    place-items: center;
-    font-family: system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    overflow: hidden;
   }
-  canvas {
-    image-rendering: pixelated;
+  .app {
+    display: grid;
+    grid-template-columns: 1fr 440px;
+    gap: 16px;
+    height: 100%;
+    padding: 16px;
+  }
+  .stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+  }
+  .panel-frame {
+    padding: clamp(12px, 2vw, 36px);
+    background:
+      radial-gradient(ellipse at 50% 50%, #14141a 0%, #0a0a0e 60%, #050507 100%);
+    border-radius: 10px;
+    box-shadow:
+      inset 0 0 0 1px #1a1a22,
+      0 40px 120px rgba(0,0,0,0.8),
+      0 0 200px rgba(255, 159, 67, 0.04);
+  }
+  canvas { display: block; }
+  .sidebar {
+    display: grid;
+    grid-template-rows: auto 1fr auto 180px;
+    gap: 10px;
+    min-height: 0;
+  }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  button, select {
+    background: #15151c;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover { border-color: #2a2a35; }
+  button.run { background: var(--accent); color: #1a1a1a; border-color: transparent; font-weight: 600; }
+  button.run:hover { background: #ffae5c; }
+  button.stop { background: #2a1a1a; color: #ffb4a8; border-color: #4a2a2a; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .status {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .editor, .console {
     background: #0a0a0f;
-    box-shadow: 0 0 60px rgba(255, 159, 67, 0.08);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--ink);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    padding: 10px 12px;
+    resize: none;
+    outline: none;
+    min-height: 0;
+  }
+  .editor { width: 100%; height: 100%; tab-size: 4; }
+  .editor:focus { border-color: #2a2a35; }
+  .console {
+    overflow: auto;
+    white-space: pre-wrap;
+    margin: 0;
+  }
+  .console .err { color: #ffb4a8; }
+  .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    padding: 0 2px;
+  }
+  .row { display: grid; grid-template-rows: auto 1fr; gap: 6px; min-height: 0; }
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+    .sidebar { grid-template-rows: auto 220px auto 140px; }
   }
 </style>
 </head>
 <body>
-  <canvas id="led" width="640" height="320"></canvas>
-<script>
+  <div class="app">
+    <div class="stage">
+      <div class="panel-frame">
+        <canvas id="led"></canvas>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="toolbar">
+        <button id="run" class="run">Run</button>
+        <button id="stop" class="stop" disabled>Stop</button>
+        <select id="samples" title="Load sample">
+          <option value="hello">hello.py</option>
+          <option value="pixel">pixel.py</option>
+          <option value="rainbow">rainbow.py</option>
+          <option value="shapes">shapes.py</option>
+        </select>
+        <span class="status" id="status">idle</span>
+      </div>
+
+      <div class="row">
+        <div class="label">script.py</div>
+        <textarea class="editor" id="editor" spellcheck="false" autocomplete="off"></textarea>
+      </div>
+
+      <div class="label">console</div>
+      <pre class="console" id="console"></pre>
+    </div>
+  </div>
+
+<script type="module">
+  // ─── LED panel renderer ─────────────────────────────────────────────────────
   const COLS = 64;
   const ROWS = 32;
-  const PITCH = 10;        // 10px per LED cell
-  const DOT   = 9;         // 9px lit dot, leaving 1px gap
-  const BG    = "#0a0a0f";
-  const ON    = "#ff9f43";
 
-  // 5x5 bitmap font. Each row is 5 chars wide; '#' = lit, '.' = off.
-  const FONT = {
-    H: [
-      "#...#",
-      "#...#",
-      "#####",
-      "#...#",
-      "#...#",
-    ],
-    E: [
-      "#####",
-      "#....",
-      "####.",
-      "#....",
-      "#####",
-    ],
-    L: [
-      "#....",
-      "#....",
-      "#....",
-      "#....",
-      "#####",
-    ],
-    O: [
-      ".###.",
-      "#...#",
-      "#...#",
-      "#...#",
-      ".###.",
-    ],
-    W: [
-      "#...#",
-      "#...#",
-      "#.#.#",
-      "#.#.#",
-      ".#.#.",
-    ],
-    R: [
-      "####.",
-      "#...#",
-      "####.",
-      "#.#..",
-      "#..##",
-    ],
-    D: [
-      "####.",
-      "#...#",
-      "#...#",
-      "#...#",
-      "####.",
-    ],
-  };
-
-  const LETTER_W = 5;
-  const LETTER_H = 5;
-  const LETTER_GAP = 1;   // gap between glyphs, in LED pixels
-  const SPACE_W = 3;      // width of a space, in LED pixels
+  let PITCH, MARGIN, LED_R, LED_OFF_R;
+  let frameBuf = new Uint8Array(COLS * ROWS * 3); // RGB per pixel
+  let needsRender = true;
 
   const canvas = document.getElementById("led");
   const ctx = canvas.getContext("2d");
 
-  // Build a grid of on/off pixels then render.
-  const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
-
-  function measure(text) {
-    let w = 0;
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      if (ch === " ") {
-        w += SPACE_W;
-      } else {
-        w += LETTER_W;
-      }
-      if (i < text.length - 1) w += LETTER_GAP;
-    }
-    return w;
-  }
-
-  function drawText(text, x0, y0) {
-    let x = x0;
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      if (ch === " ") {
-        x += SPACE_W + LETTER_GAP;
-        continue;
-      }
-      const glyph = FONT[ch];
-      for (let row = 0; row < LETTER_H; row++) {
-        const line = glyph[row];
-        for (let col = 0; col < LETTER_W; col++) {
-          if (line[col] === "#") {
-            const gx = x + col;
-            const gy = y0 + row;
-            if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) {
-              grid[gy][gx] = true;
-            }
-          }
-        }
-      }
-      x += LETTER_W + LETTER_GAP;
-    }
+  function centerOf(c, r) {
+    return [MARGIN + c * PITCH + PITCH / 2, MARGIN + r * PITCH + PITCH / 2];
   }
 
   function render() {
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = ON;
+    const W = COLS * PITCH + MARGIN * 2;
+    const H = ROWS * PITCH + MARGIN * 2;
+
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#0c0c11");
+    bg.addColorStop(1, "#070709");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Socket pass — every LED position shows as a dim dark dot.
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        if (grid[r][c]) {
-          ctx.fillRect(c * PITCH, r * PITCH, DOT, DOT);
-        }
+        const [cx, cy] = centerOf(c, r);
+        ctx.fillStyle = "#15151c";
+        ctx.beginPath();
+        ctx.arc(cx, cy, LED_OFF_R + 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#1f1f28";
+        ctx.beginPath();
+        ctx.arc(cx, cy, LED_OFF_R, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
+
+    // Bloom pass (additive).
+    ctx.globalCompositeOperation = "lighter";
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const i = (r * COLS + c) * 3;
+        const R = frameBuf[i], G = frameBuf[i + 1], B = frameBuf[i + 2];
+        if (R === 0 && G === 0 && B === 0) continue;
+        const [cx, cy] = centerOf(c, r);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, PITCH * 1.6);
+        g.addColorStop(0,    `rgba(${R},${G},${B},0.55)`);
+        g.addColorStop(0.35, `rgba(${R},${G},${B},0.18)`);
+        g.addColorStop(1,    `rgba(${R},${G},${B},0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, PITCH * 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Core pass — bright LED with warm/colored ring + white specular.
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const i = (r * COLS + c) * 3;
+        const R = frameBuf[i], G = frameBuf[i + 1], B = frameBuf[i + 2];
+        if (R === 0 && G === 0 && B === 0) continue;
+        const [cx, cy] = centerOf(c, r);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, LED_R + 1.4);
+        g.addColorStop(0,    "#ffffff");
+        g.addColorStop(0.35, `rgb(${R},${G},${B})`);
+        g.addColorStop(1,    `rgba(${R},${G},${B},0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, LED_R + 1.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(cx - 0.4, cy - 0.5, 0.9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalCompositeOperation = "source-over";
   }
 
-  const text = "HELLO WORLD";
-  const textW = measure(text);
-  const x0 = Math.floor((COLS - textW) / 2);
-  const y0 = Math.floor((ROWS - LETTER_H) / 2);
-  drawText(text, x0, y0);
-  render();
+  function resize() {
+    const stage = document.querySelector(".stage");
+    const padW = 80, padH = 80;
+    const availW = stage.clientWidth  - padW;
+    const availH = stage.clientHeight - padH;
+    const pitchFromW = availW / (COLS + 1.6);
+    const pitchFromH = availH / (ROWS + 1.6);
+    PITCH = Math.max(6, Math.min(pitchFromW, pitchFromH));
+    MARGIN = PITCH * 0.8;
+    LED_R = PITCH * 0.26;
+    LED_OFF_R = PITCH * 0.16;
+
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = Math.round(COLS * PITCH + MARGIN * 2);
+    const cssH = Math.round(ROWS * PITCH + MARGIN * 2);
+    canvas.style.width  = cssW + "px";
+    canvas.style.height = cssH + "px";
+    canvas.width  = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    needsRender = true;
+  }
+
+  function tick() {
+    if (needsRender) { render(); needsRender = false; }
+    requestAnimationFrame(tick);
+  }
+
+  window.addEventListener("resize", resize);
+  resize();
+  requestAnimationFrame(tick);
+
+  // ─── Worker management ──────────────────────────────────────────────────────
+  const runBtn   = document.getElementById("run");
+  const stopBtn  = document.getElementById("stop");
+  const statusEl = document.getElementById("status");
+  const consoleEl = document.getElementById("console");
+  const editor   = document.getElementById("editor");
+  const samples  = document.getElementById("samples");
+
+  let worker = null;
+
+  function setStatus(s) { statusEl.textContent = s; }
+  function appendConsole(s, kind) {
+    const span = document.createElement("span");
+    if (kind === "stderr") span.className = "err";
+    span.textContent = s;
+    consoleEl.appendChild(span);
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+  function clearConsole() { consoleEl.textContent = ""; }
+  function clearFrame() { frameBuf.fill(0); needsRender = true; }
+
+  function ensureWorker() {
+    if (worker) return worker;
+    worker = new Worker("worker.js");
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      switch (msg.type) {
+        case "frame":
+          frameBuf = msg.buf;
+          needsRender = true;
+          break;
+        case "stdout": appendConsole(msg.s, "stdout"); break;
+        case "stderr": appendConsole(msg.s, "stderr"); break;
+        case "status":
+          setStatus(msg.s);
+          if (msg.s === "finished" || msg.s === "error") {
+            runBtn.disabled = false;
+            stopBtn.disabled = true;
+          }
+          break;
+        case "ready":  setStatus("ready"); break;
+      }
+    };
+    worker.onerror = (e) => {
+      appendConsole(`[worker] ${e.message}\n`, "stderr");
+      setStatus("error");
+    };
+    return worker;
+  }
+
+  function killWorker() {
+    if (worker) { worker.terminate(); worker = null; }
+  }
+
+  runBtn.addEventListener("click", () => {
+    killWorker();
+    clearConsole();
+    clearFrame();
+    setStatus("starting…");
+    const w = ensureWorker();
+    w.postMessage({ type: "run", code: editor.value });
+    runBtn.disabled = true;
+    stopBtn.disabled = false;
+  });
+
+  stopBtn.addEventListener("click", () => {
+    killWorker();
+    setStatus("stopped");
+    runBtn.disabled = false;
+    stopBtn.disabled = true;
+  });
+
+  // ─── Sample scripts ─────────────────────────────────────────────────────────
+  const SCRIPTS = {
+    hello: `import time
+from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+
+opts = RGBMatrixOptions()
+opts.rows = 32
+opts.cols = 64
+matrix = RGBMatrix(options=opts)
+offscreen = matrix.CreateFrameCanvas()
+
+font = graphics.Font()
+font.LoadFont("7x13.bdf")
+color = graphics.Color(255, 159, 67)
+
+pos = offscreen.width
+text = "Hello world!"
+while True:
+    offscreen.Clear()
+    length = graphics.DrawText(offscreen, font, pos, 21, color, text)
+    pos -= 1
+    if pos + length < 0:
+        pos = offscreen.width
+    time.sleep(0.04)
+    offscreen = matrix.SwapOnVSync(offscreen)
+`,
+
+    pixel: `from rgbmatrix import RGBMatrix, RGBMatrixOptions
+
+opts = RGBMatrixOptions()
+opts.rows = 32; opts.cols = 64
+matrix = RGBMatrix(options=opts)
+fc = matrix.CreateFrameCanvas()
+
+# Draw a few static pixels in different colors.
+for x, y, (r, g, b) in [
+    (10, 10, (255,   0,   0)),
+    (20, 10, (  0, 255,   0)),
+    (30, 10, (  0,   0, 255)),
+    (40, 10, (255, 255,   0)),
+    (50, 10, (255,   0, 255)),
+]:
+    fc.SetPixel(x, y, r, g, b)
+
+matrix.SwapOnVSync(fc)
+`,
+
+    rainbow: `import time, math
+from rgbmatrix import RGBMatrix, RGBMatrixOptions
+
+opts = RGBMatrixOptions()
+opts.rows = 32; opts.cols = 64
+matrix = RGBMatrix(options=opts)
+fc = matrix.CreateFrameCanvas()
+
+def hsv(h, s, v):
+    h = h % 1.0
+    i = int(h * 6)
+    f = h * 6 - i
+    p = v * (1 - s)
+    q = v * (1 - f * s)
+    t = v * (1 - (1 - f) * s)
+    r, g, b = [
+        (v, t, p), (q, v, p), (p, v, t),
+        (p, q, v), (t, p, v), (v, p, q),
+    ][i % 6]
+    return int(r * 255), int(g * 255), int(b * 255)
+
+t0 = 0
+while True:
+    for x in range(64):
+        for y in range(32):
+            r, g, b = hsv((x + t0) / 64.0, 1.0, 0.9)
+            fc.SetPixel(x, y, r, g, b)
+    t0 += 1
+    time.sleep(0.03)
+    fc = matrix.SwapOnVSync(fc)
+`,
+
+    shapes: `import time, math
+from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+
+opts = RGBMatrixOptions()
+opts.rows = 32; opts.cols = 64
+matrix = RGBMatrix(options=opts)
+fc = matrix.CreateFrameCanvas()
+
+amber = graphics.Color(255, 159, 67)
+cyan  = graphics.Color(60, 200, 255)
+mag   = graphics.Color(255, 80, 180)
+
+t = 0
+while True:
+    fc.Clear()
+    # rotating line
+    cx, cy = 32, 16
+    a = t * 0.08
+    x2 = int(cx + math.cos(a) * 14)
+    y2 = int(cy + math.sin(a) * 12)
+    graphics.DrawLine(fc, cx, cy, x2, y2, amber)
+    # pulsing circle
+    rad = 6 + int(3 * math.sin(t * 0.12))
+    graphics.DrawCircle(fc, 12, 16, rad, cyan)
+    # static circle
+    graphics.DrawCircle(fc, 52, 16, 6, mag)
+    t += 1
+    time.sleep(0.04)
+    fc = matrix.SwapOnVSync(fc)
+`,
+  };
+
+  samples.addEventListener("change", () => {
+    editor.value = SCRIPTS[samples.value];
+  });
+  editor.value = SCRIPTS.hello;
 </script>
 </body>
 </html>
