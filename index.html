@@ -333,120 +333,23 @@
   });
 
   // ─── Sample scripts ─────────────────────────────────────────────────────────
-  const SCRIPTS = {
-    hello: `import time
-from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+  async function loadScript(name) {
+    const res = await fetch(`scripts/${name}.py`);
+    if (!res.ok) throw new Error(`failed to load scripts/${name}.py: ${res.status}`);
+    return await res.text();
+  }
 
-opts = RGBMatrixOptions()
-opts.rows = 32
-opts.cols = 64
-matrix = RGBMatrix(options=opts)
-offscreen = matrix.CreateFrameCanvas()
-
-font = graphics.Font()
-font.LoadFont("7x13.bdf")
-color = graphics.Color(255, 159, 67)
-
-pos = offscreen.width
-text = "Hello world!"
-while True:
-    offscreen.Clear()
-    length = graphics.DrawText(offscreen, font, pos, 21, color, text)
-    pos -= 1
-    if pos + length < 0:
-        pos = offscreen.width
-    time.sleep(0.04)
-    offscreen = matrix.SwapOnVSync(offscreen)
-`,
-
-    pixel: `from rgbmatrix import RGBMatrix, RGBMatrixOptions
-
-opts = RGBMatrixOptions()
-opts.rows = 32; opts.cols = 64
-matrix = RGBMatrix(options=opts)
-fc = matrix.CreateFrameCanvas()
-
-# Draw a few static pixels in different colors.
-for x, y, (r, g, b) in [
-    (10, 10, (255,   0,   0)),
-    (20, 10, (  0, 255,   0)),
-    (30, 10, (  0,   0, 255)),
-    (40, 10, (255, 255,   0)),
-    (50, 10, (255,   0, 255)),
-]:
-    fc.SetPixel(x, y, r, g, b)
-
-matrix.SwapOnVSync(fc)
-`,
-
-    rainbow: `import time, math
-from rgbmatrix import RGBMatrix, RGBMatrixOptions
-
-opts = RGBMatrixOptions()
-opts.rows = 32; opts.cols = 64
-matrix = RGBMatrix(options=opts)
-fc = matrix.CreateFrameCanvas()
-
-def hsv(h, s, v):
-    h = h % 1.0
-    i = int(h * 6)
-    f = h * 6 - i
-    p = v * (1 - s)
-    q = v * (1 - f * s)
-    t = v * (1 - (1 - f) * s)
-    r, g, b = [
-        (v, t, p), (q, v, p), (p, v, t),
-        (p, q, v), (t, p, v), (v, p, q),
-    ][i % 6]
-    return int(r * 255), int(g * 255), int(b * 255)
-
-t0 = 0
-while True:
-    for x in range(64):
-        for y in range(32):
-            r, g, b = hsv((x + t0) / 64.0, 1.0, 0.9)
-            fc.SetPixel(x, y, r, g, b)
-    t0 += 1
-    time.sleep(0.03)
-    fc = matrix.SwapOnVSync(fc)
-`,
-
-    shapes: `import time, math
-from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
-
-opts = RGBMatrixOptions()
-opts.rows = 32; opts.cols = 64
-matrix = RGBMatrix(options=opts)
-fc = matrix.CreateFrameCanvas()
-
-amber = graphics.Color(255, 159, 67)
-cyan  = graphics.Color(60, 200, 255)
-mag   = graphics.Color(255, 80, 180)
-
-t = 0
-while True:
-    fc.Clear()
-    # rotating line
-    cx, cy = 32, 16
-    a = t * 0.08
-    x2 = int(cx + math.cos(a) * 14)
-    y2 = int(cy + math.sin(a) * 12)
-    graphics.DrawLine(fc, cx, cy, x2, y2, amber)
-    # pulsing circle
-    rad = 6 + int(3 * math.sin(t * 0.12))
-    graphics.DrawCircle(fc, 12, 16, rad, cyan)
-    # static circle
-    graphics.DrawCircle(fc, 52, 16, 6, mag)
-    t += 1
-    time.sleep(0.04)
-    fc = matrix.SwapOnVSync(fc)
-`,
-  };
-
-  samples.addEventListener("change", () => {
-    editor.value = SCRIPTS[samples.value];
+  samples.addEventListener("change", async () => {
+    try {
+      editor.value = await loadScript(samples.value);
+    } catch (e) {
+      appendConsole(`${e.message}\n`, "stderr");
+    }
   });
-  editor.value = SCRIPTS.hello;
+
+  loadScript(samples.value)
+    .then((src) => { editor.value = src; })
+    .catch((e) => appendConsole(`${e.message}\n`, "stderr"));
 </script>
 </body>
 </html>
