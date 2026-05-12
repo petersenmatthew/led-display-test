@@ -32,3 +32,7 @@ Everything lives in `index.html`. The structure is:
 | `ON_BASE` | `[255, 159, 67]` | Base amber LED color |
 | `SCROLL_SPEED` | 2 | LED pixels per frame |
 | `PULSE_INTERVAL` | 3000ms | Time between brightness pulses |
+
+## Scripts
+
+When creating scripts, write them to be as easily exportable to a Raspberry Pi as possible.
