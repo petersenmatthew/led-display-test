@@ -27,7 +27,7 @@
   const PITCH = 10;        // 10px per LED cell
   const DOT   = 9;         // 9px lit dot, leaving 1px gap
   const BG    = "#0a0a0f";
-  const ON    = "#ff9f43";
+  const ON_BASE = [255, 159, 67]; // RGB for #ff9f43
 
   // 5x5 bitmap font. Each row is 5 chars wide; '#' = lit, '.' = off.
   const FONT = {
@@ -90,8 +90,44 @@
   const canvas = document.getElementById("led");
   const ctx = canvas.getContext("2d");
 
-  // Build a grid of on/off pixels then render.
-  const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
+  const text = "HELLO WORLD";
+  const SCROLL_SPEED = 2; // pixels per frame
+
+  let scrollX = COLS; // start off-screen to the right
+
+  // Organic pulse system - mimics real LED/neon behavior
+  let nextPulseTime = 0;
+  let pulseStartTime = 0;
+  let pulseDuration = 0;
+  let pulseStrength = 0;
+  let isPulsing = false;
+
+  // Per-LED flicker state (subtle individual variations)
+  const ledFlicker = Array.from({ length: ROWS }, () => 
+    Array.from({ length: COLS }, () => Math.random())
+  );
+
+  // Global power fluctuation (simulates power supply noise)
+  let powerNoise = 0;
+  let powerNoiseTarget = 0;
+  let powerNoiseVelocity = 0;
+
+  function scheduleNextPulse(time) {
+    // Random interval: 2-5 seconds with occasional quick double-pulses
+    const isDoublePulse = Math.random() < 0.15;
+    const baseInterval = isDoublePulse ? 300 + Math.random() * 400 : 2000 + Math.random() * 3000;
+    nextPulseTime = time + baseInterval;
+  }
+
+  function startPulse(time) {
+    isPulsing = true;
+    pulseStartTime = time;
+    // Variable duration: 200-800ms
+    pulseDuration = 200 + Math.random() * 600;
+    // Variable strength: 0.3-0.5 boost
+    pulseStrength = 0.3 + Math.random() * 0.2;
+    scheduleNextPulse(time + pulseDuration);
+  }
 
   function measure(text) {
     let w = 0;
@@ -107,7 +143,18 @@
     return w;
   }
 
-  function drawText(text, x0, y0) {
+  const textW = measure(text);
+  const y0 = Math.floor((ROWS - LETTER_H) / 2);
+
+  function clearGrid(grid) {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        grid[r][c] = false;
+      }
+    }
+  }
+
+  function drawText(grid, text, x0, y0) {
     let x = x0;
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];
@@ -132,25 +179,126 @@
     }
   }
 
-  function render() {
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = ON;
+  function updatePowerNoise() {
+    // Smooth random walk for power supply noise
+    if (Math.random() < 0.1) {
+      powerNoiseTarget = (Math.random() - 0.5) * 0.08;
+    }
+    powerNoiseVelocity += (powerNoiseTarget - powerNoise) * 0.1;
+    powerNoiseVelocity *= 0.85; // damping
+    powerNoise += powerNoiseVelocity;
+  }
+
+  function updateLedFlicker() {
+    // Slowly drift individual LED brightness variations
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        if (grid[r][c]) {
-          ctx.fillRect(c * PITCH, r * PITCH, DOT, DOT);
+        if (Math.random() < 0.02) {
+          // Occasional small jump
+          ledFlicker[r][c] += (Math.random() - 0.5) * 0.15;
         }
+        // Drift back toward center
+        ledFlicker[r][c] += (0.5 - ledFlicker[r][c]) * 0.01;
+        ledFlicker[r][c] = Math.max(0.3, Math.min(0.7, ledFlicker[r][c]));
       }
     }
   }
 
-  const text = "HELLO WORLD";
-  const textW = measure(text);
-  const x0 = Math.floor((COLS - textW) / 2);
-  const y0 = Math.floor((ROWS - LETTER_H) / 2);
-  drawText(text, x0, y0);
-  render();
+  function getGlobalIntensity(time) {
+    let base = 0.55 + powerNoise;
+    
+    if (isPulsing) {
+      const elapsed = time - pulseStartTime;
+      if (elapsed >= pulseDuration) {
+        isPulsing = false;
+      } else {
+        // Asymmetric pulse: fast attack, slower decay
+        const progress = elapsed / pulseDuration;
+        const attack = Math.min(1, progress * 4); // quick ramp up
+        const decay = 1 - Math.pow(progress, 0.7); // slower falloff
+        const pulse = attack * decay;
+        base += pulse * pulseStrength;
+      }
+    }
+    
+    return Math.max(0.4, Math.min(1.0, base));
+  }
+
+  function render(grid, time) {
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    const globalIntensity = getGlobalIntensity(time);
+    const isGlowing = globalIntensity > 0.65;
+    
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        if (grid[row][col]) {
+          // Per-LED variation: ±8% from global
+          const localVar = (ledFlicker[row][col] - 0.5) * 0.16;
+          const intensity = Math.max(0.35, Math.min(1.0, globalIntensity + localVar));
+          
+          const r = Math.round(ON_BASE[0] * intensity);
+          const g = Math.round(ON_BASE[1] * intensity);
+          const b = Math.round(ON_BASE[2] * intensity);
+          
+          // Glow during bright moments
+          if (isGlowing) {
+            const glowSize = (globalIntensity - 0.5) * 10;
+            ctx.shadowColor = `rgba(${ON_BASE[0]}, ${ON_BASE[1]}, ${ON_BASE[2]}, ${globalIntensity * 0.6})`;
+            ctx.shadowBlur = glowSize;
+          } else {
+            ctx.shadowBlur = 0;
+          }
+          
+          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+          ctx.fillRect(col * PITCH, row * PITCH, DOT, DOT);
+        }
+      }
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
+  let lastTime = 0;
+  const FRAME_INTERVAL = 50; // ~20fps for that retro feel
+
+  function animate(time) {
+    // Throttle frame rate for retro effect
+    if (time - lastTime >= FRAME_INTERVAL) {
+      lastTime = time;
+      
+      // Check if it's time for a spontaneous pulse
+      if (!isPulsing && time >= nextPulseTime) {
+        startPulse(time);
+      }
+      
+      // Update organic noise systems
+      updatePowerNoise();
+      updateLedFlicker();
+      
+      // Clear and redraw at new position
+      clearGrid(grid);
+      drawText(grid, text, Math.floor(scrollX), y0);
+      
+      // Render with current lighting state
+      render(grid, time);
+      
+      // Move text left
+      scrollX -= SCROLL_SPEED;
+      
+      // Reset when text fully exits left side
+      if (scrollX < -textW) {
+        scrollX = COLS;
+      }
+    }
+    
+    requestAnimationFrame(animate);
+  }
+
+  // Initialize first pulse timing
+  scheduleNextPulse(0);
+  requestAnimationFrame(animate);
 </script>
 </body>
 </html>
