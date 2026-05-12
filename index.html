@@ -2,303 +2,451 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>LED Matrix</title>
+<title>LED Matrix Prototyper</title>
 <style>
+  :root {
+    --bg: #050507;
+    --panel: #0c0c11;
+    --ink: #d8d8e0;
+    --muted: #6f6f7d;
+    --accent: #ff9f43;
+    --line: #1c1c25;
+  }
+  * { box-sizing: border-box; }
   html, body {
     margin: 0;
     height: 100%;
-    background: #0a0a0f;
-    display: grid;
-    place-items: center;
-    font-family: system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    overflow: hidden;
   }
-  canvas {
-    image-rendering: pixelated;
+  .app {
+    display: grid;
+    grid-template-columns: 1fr 440px;
+    gap: 16px;
+    height: 100%;
+    padding: 16px;
+  }
+  .stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+  }
+  .panel-frame {
+    padding: clamp(12px, 2vw, 36px);
+    background:
+      radial-gradient(ellipse at 50% 50%, #14141a 0%, #0a0a0e 60%, #050507 100%);
+    border-radius: 10px;
+    box-shadow:
+      inset 0 0 0 1px #1a1a22,
+      0 40px 120px rgba(0,0,0,0.8),
+      0 0 200px rgba(255, 159, 67, 0.04);
+  }
+  canvas { display: block; }
+  .sidebar {
+    display: grid;
+    grid-template-rows: auto 1fr auto 180px;
+    gap: 10px;
+    min-height: 0;
+  }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  button, select {
+    background: #15151c;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover { border-color: #2a2a35; }
+  button.run { background: var(--accent); color: #1a1a1a; border-color: transparent; font-weight: 600; }
+  button.run:hover { background: #ffae5c; }
+  button.stop { background: #2a1a1a; color: #ffb4a8; border-color: #4a2a2a; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .status {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .editor, .console {
     background: #0a0a0f;
-    box-shadow: 0 0 60px rgba(255, 159, 67, 0.08);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--ink);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    padding: 10px 12px;
+    resize: none;
+    outline: none;
+    min-height: 0;
+  }
+  .editor { width: 100%; height: 100%; tab-size: 4; }
+  .editor:focus { border-color: #2a2a35; }
+  .console {
+    overflow: auto;
+    white-space: pre-wrap;
+    margin: 0;
+  }
+  .console .err { color: #ffb4a8; }
+  .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    padding: 0 2px;
+  }
+  .row { display: grid; grid-template-rows: auto 1fr; gap: 6px; min-height: 0; }
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+    .sidebar { grid-template-rows: auto 220px auto 140px; }
   }
 </style>
 </head>
 <body>
-  <canvas id="led" width="640" height="320"></canvas>
-<script>
+  <div class="app">
+    <div class="stage">
+      <div class="panel-frame">
+        <canvas id="led"></canvas>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="toolbar">
+        <button id="run" class="run">Run</button>
+        <button id="stop" class="stop" disabled>Stop</button>
+        <select id="samples" title="Load sample">
+          <option value="hello">hello.py</option>
+          <option value="pixel">pixel.py</option>
+          <option value="rainbow">rainbow.py</option>
+          <option value="shapes">shapes.py</option>
+        </select>
+        <span class="status" id="status">idle</span>
+      </div>
+
+      <div class="row">
+        <div class="label">script.py</div>
+        <textarea class="editor" id="editor" spellcheck="false" autocomplete="off"></textarea>
+      </div>
+
+      <div class="label">console</div>
+      <pre class="console" id="console"></pre>
+    </div>
+  </div>
+
+<script type="module">
+  // ─── LED panel renderer ─────────────────────────────────────────────────────
   const COLS = 64;
   const ROWS = 32;
-  const PITCH = 10;        // 10px per LED cell
-  const DOT   = 9;         // 9px lit dot, leaving 1px gap
-  const BG    = "#0a0a0f";
-  const ON_BASE = [255, 159, 67]; // RGB for #ff9f43
 
-  // 5x5 bitmap font. Each row is 5 chars wide; '#' = lit, '.' = off.
-  const FONT = {
-    H: [
-      "#...#",
-      "#...#",
-      "#####",
-      "#...#",
-      "#...#",
-    ],
-    E: [
-      "#####",
-      "#....",
-      "####.",
-      "#....",
-      "#####",
-    ],
-    L: [
-      "#....",
-      "#....",
-      "#....",
-      "#....",
-      "#####",
-    ],
-    O: [
-      ".###.",
-      "#...#",
-      "#...#",
-      "#...#",
-      ".###.",
-    ],
-    W: [
-      "#...#",
-      "#...#",
-      "#.#.#",
-      "#.#.#",
-      ".#.#.",
-    ],
-    R: [
-      "####.",
-      "#...#",
-      "####.",
-      "#.#..",
-      "#..##",
-    ],
-    D: [
-      "####.",
-      "#...#",
-      "#...#",
-      "#...#",
-      "####.",
-    ],
-  };
-
-  const LETTER_W = 5;
-  const LETTER_H = 5;
-  const LETTER_GAP = 1;   // gap between glyphs, in LED pixels
-  const SPACE_W = 3;      // width of a space, in LED pixels
+  let PITCH, MARGIN, LED_R, LED_OFF_R;
+  let frameBuf = new Uint8Array(COLS * ROWS * 3); // RGB per pixel
+  let needsRender = true;
 
   const canvas = document.getElementById("led");
   const ctx = canvas.getContext("2d");
 
-  const text = "HELLO WORLD";
-  const SCROLL_SPEED = 2; // pixels per frame
-
-  let scrollX = COLS; // start off-screen to the right
-
-  // Organic pulse system - mimics real LED/neon behavior
-  let nextPulseTime = 0;
-  let pulseStartTime = 0;
-  let pulseDuration = 0;
-  let pulseStrength = 0;
-  let isPulsing = false;
-
-  // Per-LED flicker state (subtle individual variations)
-  const ledFlicker = Array.from({ length: ROWS }, () => 
-    Array.from({ length: COLS }, () => Math.random())
-  );
-
-  // Global power fluctuation (simulates power supply noise)
-  let powerNoise = 0;
-  let powerNoiseTarget = 0;
-  let powerNoiseVelocity = 0;
-
-  function scheduleNextPulse(time) {
-    // Random interval: 2-5 seconds with occasional quick double-pulses
-    const isDoublePulse = Math.random() < 0.15;
-    const baseInterval = isDoublePulse ? 300 + Math.random() * 400 : 2000 + Math.random() * 3000;
-    nextPulseTime = time + baseInterval;
+  function centerOf(c, r) {
+    return [MARGIN + c * PITCH + PITCH / 2, MARGIN + r * PITCH + PITCH / 2];
   }
 
-  function startPulse(time) {
-    isPulsing = true;
-    pulseStartTime = time;
-    // Variable duration: 200-800ms
-    pulseDuration = 200 + Math.random() * 600;
-    // Variable strength: 0.3-0.5 boost
-    pulseStrength = 0.3 + Math.random() * 0.2;
-    scheduleNextPulse(time + pulseDuration);
-  }
+  function render() {
+    const W = COLS * PITCH + MARGIN * 2;
+    const H = ROWS * PITCH + MARGIN * 2;
 
-  function measure(text) {
-    let w = 0;
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      if (ch === " ") {
-        w += SPACE_W;
-      } else {
-        w += LETTER_W;
-      }
-      if (i < text.length - 1) w += LETTER_GAP;
-    }
-    return w;
-  }
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#0c0c11");
+    bg.addColorStop(1, "#070709");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
 
-  const textW = measure(text);
-  const y0 = Math.floor((ROWS - LETTER_H) / 2);
-
-  function clearGrid(grid) {
+    // Socket pass — every LED position shows as a dim dark dot.
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        grid[r][c] = false;
+        const [cx, cy] = centerOf(c, r);
+        ctx.fillStyle = "#15151c";
+        ctx.beginPath();
+        ctx.arc(cx, cy, LED_OFF_R + 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#1f1f28";
+        ctx.beginPath();
+        ctx.arc(cx, cy, LED_OFF_R, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
-  }
 
-  function drawText(grid, text, x0, y0) {
-    let x = x0;
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      if (ch === " ") {
-        x += SPACE_W + LETTER_GAP;
-        continue;
-      }
-      const glyph = FONT[ch];
-      for (let row = 0; row < LETTER_H; row++) {
-        const line = glyph[row];
-        for (let col = 0; col < LETTER_W; col++) {
-          if (line[col] === "#") {
-            const gx = x + col;
-            const gy = y0 + row;
-            if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) {
-              grid[gy][gx] = true;
-            }
-          }
-        }
-      }
-      x += LETTER_W + LETTER_GAP;
-    }
-  }
-
-  function updatePowerNoise() {
-    // Smooth random walk for power supply noise
-    if (Math.random() < 0.1) {
-      powerNoiseTarget = (Math.random() - 0.5) * 0.08;
-    }
-    powerNoiseVelocity += (powerNoiseTarget - powerNoise) * 0.1;
-    powerNoiseVelocity *= 0.85; // damping
-    powerNoise += powerNoiseVelocity;
-  }
-
-  function updateLedFlicker() {
-    // Slowly drift individual LED brightness variations
+    // Bloom pass (additive).
+    ctx.globalCompositeOperation = "lighter";
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        if (Math.random() < 0.02) {
-          // Occasional small jump
-          ledFlicker[r][c] += (Math.random() - 0.5) * 0.15;
-        }
-        // Drift back toward center
-        ledFlicker[r][c] += (0.5 - ledFlicker[r][c]) * 0.01;
-        ledFlicker[r][c] = Math.max(0.3, Math.min(0.7, ledFlicker[r][c]));
+        const i = (r * COLS + c) * 3;
+        const R = frameBuf[i], G = frameBuf[i + 1], B = frameBuf[i + 2];
+        if (R === 0 && G === 0 && B === 0) continue;
+        const [cx, cy] = centerOf(c, r);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, PITCH * 1.6);
+        g.addColorStop(0,    `rgba(${R},${G},${B},0.55)`);
+        g.addColorStop(0.35, `rgba(${R},${G},${B},0.18)`);
+        g.addColorStop(1,    `rgba(${R},${G},${B},0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, PITCH * 1.6, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
-  }
 
-  function getGlobalIntensity(time) {
-    let base = 0.55 + powerNoise;
-    
-    if (isPulsing) {
-      const elapsed = time - pulseStartTime;
-      if (elapsed >= pulseDuration) {
-        isPulsing = false;
-      } else {
-        // Asymmetric pulse: fast attack, slower decay
-        const progress = elapsed / pulseDuration;
-        const attack = Math.min(1, progress * 4); // quick ramp up
-        const decay = 1 - Math.pow(progress, 0.7); // slower falloff
-        const pulse = attack * decay;
-        base += pulse * pulseStrength;
+    // Core pass — bright LED with warm/colored ring + white specular.
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const i = (r * COLS + c) * 3;
+        const R = frameBuf[i], G = frameBuf[i + 1], B = frameBuf[i + 2];
+        if (R === 0 && G === 0 && B === 0) continue;
+        const [cx, cy] = centerOf(c, r);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, LED_R + 1.4);
+        g.addColorStop(0,    "#ffffff");
+        g.addColorStop(0.35, `rgb(${R},${G},${B})`);
+        g.addColorStop(1,    `rgba(${R},${G},${B},0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, LED_R + 1.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(cx - 0.4, cy - 0.5, 0.9, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
-    
-    return Math.max(0.4, Math.min(1.0, base));
+    ctx.globalCompositeOperation = "source-over";
   }
 
-  function render(grid, time) {
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    const globalIntensity = getGlobalIntensity(time);
-    const isGlowing = globalIntensity > 0.65;
-    
-    for (let row = 0; row < ROWS; row++) {
-      for (let col = 0; col < COLS; col++) {
-        if (grid[row][col]) {
-          // Per-LED variation: ±8% from global
-          const localVar = (ledFlicker[row][col] - 0.5) * 0.16;
-          const intensity = Math.max(0.35, Math.min(1.0, globalIntensity + localVar));
-          
-          const r = Math.round(ON_BASE[0] * intensity);
-          const g = Math.round(ON_BASE[1] * intensity);
-          const b = Math.round(ON_BASE[2] * intensity);
-          
-          // Glow during bright moments
-          if (isGlowing) {
-            const glowSize = (globalIntensity - 0.5) * 10;
-            ctx.shadowColor = `rgba(${ON_BASE[0]}, ${ON_BASE[1]}, ${ON_BASE[2]}, ${globalIntensity * 0.6})`;
-            ctx.shadowBlur = glowSize;
-          } else {
-            ctx.shadowBlur = 0;
+  function resize() {
+    const stage = document.querySelector(".stage");
+    const padW = 80, padH = 80;
+    const availW = stage.clientWidth  - padW;
+    const availH = stage.clientHeight - padH;
+    const pitchFromW = availW / (COLS + 1.6);
+    const pitchFromH = availH / (ROWS + 1.6);
+    PITCH = Math.max(6, Math.min(pitchFromW, pitchFromH));
+    MARGIN = PITCH * 0.8;
+    LED_R = PITCH * 0.26;
+    LED_OFF_R = PITCH * 0.16;
+
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = Math.round(COLS * PITCH + MARGIN * 2);
+    const cssH = Math.round(ROWS * PITCH + MARGIN * 2);
+    canvas.style.width  = cssW + "px";
+    canvas.style.height = cssH + "px";
+    canvas.width  = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    needsRender = true;
+  }
+
+  function tick() {
+    if (needsRender) { render(); needsRender = false; }
+    requestAnimationFrame(tick);
+  }
+
+  window.addEventListener("resize", resize);
+  resize();
+  requestAnimationFrame(tick);
+
+  // ─── Worker management ──────────────────────────────────────────────────────
+  const runBtn   = document.getElementById("run");
+  const stopBtn  = document.getElementById("stop");
+  const statusEl = document.getElementById("status");
+  const consoleEl = document.getElementById("console");
+  const editor   = document.getElementById("editor");
+  const samples  = document.getElementById("samples");
+
+  let worker = null;
+
+  function setStatus(s) { statusEl.textContent = s; }
+  function appendConsole(s, kind) {
+    const span = document.createElement("span");
+    if (kind === "stderr") span.className = "err";
+    span.textContent = s;
+    consoleEl.appendChild(span);
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+  function clearConsole() { consoleEl.textContent = ""; }
+  function clearFrame() { frameBuf.fill(0); needsRender = true; }
+
+  function ensureWorker() {
+    if (worker) return worker;
+    worker = new Worker("worker.js");
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      switch (msg.type) {
+        case "frame":
+          frameBuf = msg.buf;
+          needsRender = true;
+          break;
+        case "stdout": appendConsole(msg.s, "stdout"); break;
+        case "stderr": appendConsole(msg.s, "stderr"); break;
+        case "status":
+          setStatus(msg.s);
+          if (msg.s === "finished" || msg.s === "error") {
+            runBtn.disabled = false;
+            stopBtn.disabled = true;
           }
-          
-          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-          ctx.fillRect(col * PITCH, row * PITCH, DOT, DOT);
-        }
+          break;
+        case "ready":  setStatus("ready"); break;
       }
-    }
-    ctx.shadowBlur = 0;
+    };
+    worker.onerror = (e) => {
+      appendConsole(`[worker] ${e.message}\n`, "stderr");
+      setStatus("error");
+    };
+    return worker;
   }
 
-  const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
-  let lastTime = 0;
-  const FRAME_INTERVAL = 50; // ~20fps for that retro feel
-
-  function animate(time) {
-    // Throttle frame rate for retro effect
-    if (time - lastTime >= FRAME_INTERVAL) {
-      lastTime = time;
-      
-      // Check if it's time for a spontaneous pulse
-      if (!isPulsing && time >= nextPulseTime) {
-        startPulse(time);
-      }
-      
-      // Update organic noise systems
-      updatePowerNoise();
-      updateLedFlicker();
-      
-      // Clear and redraw at new position
-      clearGrid(grid);
-      drawText(grid, text, Math.floor(scrollX), y0);
-      
-      // Render with current lighting state
-      render(grid, time);
-      
-      // Move text left
-      scrollX -= SCROLL_SPEED;
-      
-      // Reset when text fully exits left side
-      if (scrollX < -textW) {
-        scrollX = COLS;
-      }
-    }
-    
-    requestAnimationFrame(animate);
+  function killWorker() {
+    if (worker) { worker.terminate(); worker = null; }
   }
 
-  // Initialize first pulse timing
-  scheduleNextPulse(0);
-  requestAnimationFrame(animate);
+  runBtn.addEventListener("click", () => {
+    killWorker();
+    clearConsole();
+    clearFrame();
+    setStatus("starting…");
+    const w = ensureWorker();
+    w.postMessage({ type: "run", code: editor.value });
+    runBtn.disabled = true;
+    stopBtn.disabled = false;
+  });
+
+  stopBtn.addEventListener("click", () => {
+    killWorker();
+    setStatus("stopped");
+    runBtn.disabled = false;
+    stopBtn.disabled = true;
+  });
+
+  // ─── Sample scripts ─────────────────────────────────────────────────────────
+  const SCRIPTS = {
+    hello: `import time
+from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+
+opts = RGBMatrixOptions()
+opts.rows = 32
+opts.cols = 64
+matrix = RGBMatrix(options=opts)
+offscreen = matrix.CreateFrameCanvas()
+
+font = graphics.Font()
+font.LoadFont("7x13.bdf")
+color = graphics.Color(255, 159, 67)
+
+pos = offscreen.width
+text = "Hello world!"
+while True:
+    offscreen.Clear()
+    length = graphics.DrawText(offscreen, font, pos, 21, color, text)
+    pos -= 1
+    if pos + length < 0:
+        pos = offscreen.width
+    time.sleep(0.04)
+    offscreen = matrix.SwapOnVSync(offscreen)
+`,
+
+    pixel: `from rgbmatrix import RGBMatrix, RGBMatrixOptions
+
+opts = RGBMatrixOptions()
+opts.rows = 32; opts.cols = 64
+matrix = RGBMatrix(options=opts)
+fc = matrix.CreateFrameCanvas()
+
+# Draw a few static pixels in different colors.
+for x, y, (r, g, b) in [
+    (10, 10, (255,   0,   0)),
+    (20, 10, (  0, 255,   0)),
+    (30, 10, (  0,   0, 255)),
+    (40, 10, (255, 255,   0)),
+    (50, 10, (255,   0, 255)),
+]:
+    fc.SetPixel(x, y, r, g, b)
+
+matrix.SwapOnVSync(fc)
+`,
+
+    rainbow: `import time, math
+from rgbmatrix import RGBMatrix, RGBMatrixOptions
+
+opts = RGBMatrixOptions()
+opts.rows = 32; opts.cols = 64
+matrix = RGBMatrix(options=opts)
+fc = matrix.CreateFrameCanvas()
+
+def hsv(h, s, v):
+    h = h % 1.0
+    i = int(h * 6)
+    f = h * 6 - i
+    p = v * (1 - s)
+    q = v * (1 - f * s)
+    t = v * (1 - (1 - f) * s)
+    r, g, b = [
+        (v, t, p), (q, v, p), (p, v, t),
+        (p, q, v), (t, p, v), (v, p, q),
+    ][i % 6]
+    return int(r * 255), int(g * 255), int(b * 255)
+
+t0 = 0
+while True:
+    for x in range(64):
+        for y in range(32):
+            r, g, b = hsv((x + t0) / 64.0, 1.0, 0.9)
+            fc.SetPixel(x, y, r, g, b)
+    t0 += 1
+    time.sleep(0.03)
+    fc = matrix.SwapOnVSync(fc)
+`,
+
+    shapes: `import time, math
+from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+
+opts = RGBMatrixOptions()
+opts.rows = 32; opts.cols = 64
+matrix = RGBMatrix(options=opts)
+fc = matrix.CreateFrameCanvas()
+
+amber = graphics.Color(255, 159, 67)
+cyan  = graphics.Color(60, 200, 255)
+mag   = graphics.Color(255, 80, 180)
+
+t = 0
+while True:
+    fc.Clear()
+    # rotating line
+    cx, cy = 32, 16
+    a = t * 0.08
+    x2 = int(cx + math.cos(a) * 14)
+    y2 = int(cy + math.sin(a) * 12)
+    graphics.DrawLine(fc, cx, cy, x2, y2, amber)
+    # pulsing circle
+    rad = 6 + int(3 * math.sin(t * 0.12))
+    graphics.DrawCircle(fc, 12, 16, rad, cyan)
+    # static circle
+    graphics.DrawCircle(fc, 52, 16, 6, mag)
+    t += 1
+    time.sleep(0.04)
+    fc = matrix.SwapOnVSync(fc)
+`,
+  };
+
+  samples.addEventListener("change", () => {
+    editor.value = SCRIPTS[samples.value];
+  });
+  editor.value = SCRIPTS.hello;
 </script>
 </body>
 </html>
