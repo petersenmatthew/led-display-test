@@ -34,17 +34,112 @@
     justify-content: center;
     min-width: 0;
     min-height: 0;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    border-radius: 4px;
+    background-color: #ebe5dc;
+    background-image:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='80'><rect width='240' height='80' fill='%23c9c2b6'/><rect x='2' y='2' width='116' height='36' rx='1' fill='%23f5f2ec'/><rect x='122' y='2' width='116' height='36' rx='1' fill='%23ede8df'/><rect x='-58' y='42' width='116' height='36' rx='1' fill='%23f1ede4'/><rect x='62' y='42' width='116' height='36' rx='1' fill='%23f6f3ed'/><rect x='182' y='42' width='116' height='36' rx='1' fill='%23eae5dc'/><g opacity='0.18' fill='none' stroke='%23b8b1a4' stroke-width='0.6'><path d='M 8 10 L 110 10'/><path d='M 130 22 L 232 22'/><path d='M 4 52 L 52 52'/><path d='M 70 64 L 172 64'/><path d='M 190 50 L 290 50'/></g></svg>");
+    background-size: 220px 73px;
+    background-repeat: repeat;
+  }
+  .stage::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse at 50% 45%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0) 50%),
+      radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.28) 100%);
+    z-index: 3;
+  }
+  .stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='0.6'/></svg>");
+    opacity: 0.06;
+    mix-blend-mode: multiply;
+    z-index: 3;
+  }
+  .cord {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;
+    overflow: visible;
   }
   .panel-frame {
-    padding: clamp(12px, 2vw, 36px);
+    position: relative;
+    z-index: 2;
+    padding: clamp(10px, 1.6vw, 28px);
     background:
-      radial-gradient(ellipse at 50% 50%, #14141a 0%, #0a0a0e 60%, #050507 100%);
-    border-radius: 10px;
+      linear-gradient(180deg, #0d0d11 0%, #08080b 100%);
+    border-radius: 3px;
     box-shadow:
-      inset 0 0 0 1px #1a1a22,
-      0 40px 120px rgba(0,0,0,0.8),
-      0 0 200px rgba(255, 159, 67, 0.04);
+      inset 0 1px 0 rgba(255,255,255,0.05),
+      inset 0 -1px 0 rgba(0,0,0,0.6),
+      inset 0 0 0 1px #15151c,
+      0 2px 4px rgba(0,0,0,0.35),
+      0 14px 28px -8px rgba(0,0,0,0.55),
+      0 30px 60px -18px rgba(0,0,0,0.45);
   }
+  .panel-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 3px;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(
+        90deg,
+        rgba(255,255,255,0.012) 0 1px,
+        transparent 1px 4px
+      );
+    opacity: 0.6;
+  }
+  .screw {
+    position: absolute;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 35% 30%, #d8d8de 0%, #9a9aa2 40%, #5a5a62 75%, #2c2c32 100%);
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.55),
+      0 1px 1px rgba(0,0,0,0.6),
+      inset 0 -1px 1px rgba(0,0,0,0.4);
+    z-index: 3;
+  }
+  .screw::before, .screw::after {
+    content: "";
+    position: absolute;
+    background: #16161a;
+    border-radius: 0.5px;
+    box-shadow: 0 0 1px rgba(0,0,0,0.6);
+  }
+  .screw::before {
+    top: 50%;
+    left: 15%;
+    right: 15%;
+    height: 1.4px;
+    transform: translateY(-50%) rotate(35deg);
+  }
+  .screw::after {
+    left: 50%;
+    top: 15%;
+    bottom: 15%;
+    width: 1.4px;
+    transform: translateX(-50%) rotate(35deg);
+  }
+  .screw.tl { top: 5px; left: 5px; }
+  .screw.tr { top: 5px; right: 5px; }
+  .screw.bl { bottom: 5px; left: 5px; }
+  .screw.br { bottom: 5px; right: 5px; }
   canvas { display: block; }
   .sidebar {
     display: grid;
@@ -116,7 +211,26 @@
 <body>
   <div class="app">
     <div class="stage">
+      <svg class="cord" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M 50 50 C 58 56, 66 64, 70 78 S 78 96, 82 110"
+              stroke="rgba(0,0,0,0.22)" stroke-width="9" fill="none"
+              stroke-linecap="round" vector-effect="non-scaling-stroke"
+              transform="translate(0.6 0.8)"/>
+        <path d="M 50 50 C 58 56, 66 64, 70 78 S 78 96, 82 110"
+              stroke="#141416" stroke-width="6.5" fill="none"
+              stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+        <path d="M 50 50 C 58 56, 66 64, 70 78 S 78 96, 82 110"
+              stroke="#2e2e34" stroke-width="3.5" fill="none"
+              stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+        <path d="M 50 50 C 58 56, 66 64, 70 78 S 78 96, 82 110"
+              stroke="rgba(170,170,180,0.35)" stroke-width="0.9" fill="none"
+              stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      </svg>
       <div class="panel-frame">
+        <span class="screw tl"></span>
+        <span class="screw tr"></span>
+        <span class="screw bl"></span>
+        <span class="screw br"></span>
         <canvas id="led"></canvas>
       </div>
     </div>
