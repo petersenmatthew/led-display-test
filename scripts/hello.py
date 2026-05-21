@@ -2,7 +2,7 @@ import os
 import time
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
-FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
+FONT_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts"))
 
 opts = RGBMatrixOptions()
 opts.rows = 32
