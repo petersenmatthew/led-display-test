@@ -1,0 +1,4 @@
+interface:
+  display_name: "LED Matrix Preview"
+  short_description: "Render rgbmatrix scripts to preview PNGs"
+  default_prompt: "Use $led-matrix-preview to render this LED matrix Python script to a preview PNG."
