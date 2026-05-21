@@ -164,6 +164,24 @@ FOREGROUND_REGIONS = (
     (0, 22, 63, 31),
 )
 
+ION_TRAIN_GLAZING_REGIONS = (
+    (47, 25, 63, 27),
+)
+
+NIGHT_WINDOW_LIGHTS = (
+    (19, 4, 19, 4, 0),
+    (22, 7, 22, 7, 31),
+    (19, 12, 19, 12, 67),
+    (22, 18, 22, 18, 103),
+    (25, 7, 26, 7, 151),
+    (25, 13, 26, 13, 197),
+    (25, 21, 26, 21, 239),
+    (31, 9, 31, 9, 283),
+    (31, 18, 31, 18, 331),
+    (8, 17, 9, 17, 379),
+    (13, 19, 13, 19, 421),
+)
+
 SKY_EXCLUSION_REGIONS = (
     CLOUD_REGIONS
     + LEFT_BUILDING_REGIONS
@@ -2578,6 +2596,44 @@ def blend_color(col, target, amount):
 
 
 NIGHT_SKY = (5, 9, 32)
+NIGHT_STAR_COUNT = 9
+NIGHT_STAR_SEED = 1807
+NIGHT_STAR_FLASH_FRAMES = 18
+
+
+def weather_label_bounds(text):
+    text_w = len(text) * 4
+    pad = 1
+    x0 = max(0, W - text_w - pad * 2)
+    return x0, 0, W - 1, 7, pad
+
+
+def generate_night_stars():
+    rng = random.Random(NIGHT_STAR_SEED)
+    label_region = weather_label_bounds("12C NITE")[:4]
+    avoid_regions = SKY_EXCLUSION_REGIONS + (label_region,)
+    stars = []
+
+    for _ in range(500):
+        if len(stars) >= NIGHT_STAR_COUNT:
+            break
+        x = rng.randint(1, W - 2)
+        y = rng.randint(1, 18)
+        if in_any_region(x, y, avoid_regions):
+            continue
+        if any(
+            abs(x - sx) + abs(y - sy) < 7
+            for sx, sy, _cycle, _phase in stars
+        ):
+            continue
+        cycle = rng.randint(96, 160)
+        phase = rng.randint(0, cycle - 1)
+        stars.append((x, y, cycle, phase))
+
+    return tuple(stars)
+
+
+NIGHT_STARS = generate_night_stars()
 
 
 def building_night(col):
@@ -2588,8 +2644,41 @@ def foreground_night(col):
     return blend_color(scale_color(col, 0.42), (8, 12, 18), 0.20)
 
 
-def sky_storm(col):
-    return blend_color(scale_color(col, 0.55), (42, 54, 76), 0.45)
+STORM_SKY = (54, 66, 86)
+
+
+def cloud_storm(col):
+    return blend_color(scale_color(col, 0.65), (70, 80, 96), 0.5)
+
+
+def building_storm(col):
+    return blend_color(scale_color(col, 0.78), (60, 70, 84), 0.18)
+
+
+def foreground_storm(col):
+    return blend_color(scale_color(col, 0.78), (50, 60, 76), 0.18)
+
+
+def draw_storm_spans_clipped(c, spans, regions, transform, preserve_sky_regions=()):
+    """Like draw_spans_clipped_transformed but skips source-sky pixels.
+
+    Mirrors the night-scene approach so the sky-blue pixels embedded in
+    cloud/building regions don't paint visible rectangles against the
+    flat storm sky. Pixels inside ``preserve_sky_regions`` (e.g. the ION
+    train's glazing) are kept and tinted so they don't blend into the sky.
+    """
+    for y, row in enumerate(spans):
+        for x0, length, palette_index in row:
+            source = PALETTE[palette_index]
+            col = transform(source)
+            for x in range(x0, x0 + length):
+                if not in_any_region(x, y, regions):
+                    continue
+                if is_source_sky_color(source) and not in_any_region(
+                    x, y, preserve_sky_regions
+                ):
+                    continue
+                px(c, x, y, col)
 
 
 def sky_winter(col):
@@ -2609,16 +2698,19 @@ def is_source_sky_color(col):
     return col[0] < 140 and col[2] > col[0] + 60 and col[2] > col[1] + 35
 
 
-def draw_night_spans_clipped(c, spans, regions, transform):
+def draw_night_spans_clipped(c, spans, regions, transform, preserve_sky_regions=()):
     for y, row in enumerate(spans):
         for x0, length, palette_index in row:
             source = PALETTE[palette_index]
-            if is_source_sky_color(source):
-                continue
             col = transform(source)
             for x in range(x0, x0 + length):
-                if in_any_region(x, y, regions):
-                    px(c, x, y, col)
+                if not in_any_region(x, y, regions):
+                    continue
+                if is_source_sky_color(source) and not in_any_region(
+                    x, y, preserve_sky_regions
+                ):
+                    continue
+                px(c, x, y, col)
 
 
 def draw_spans_except_transformed(c, spans, regions, transform):
@@ -2744,22 +2836,51 @@ def draw_snow(c, frame):
 
 
 def draw_stars(c, frame):
-    stars = ((7, 5, 0), (13, 12, 29), (40, 5, 58), (56, 14, 87))
-    for sx, sy, phase in stars:
-        b = 165 + int(45 * math.sin((frame + phase) * 0.10))
+    for sx, sy, cycle, phase in NIGHT_STARS:
+        age = (frame + phase) % cycle
+        b = 58
+        if age < NIGHT_STAR_FLASH_FRAMES:
+            crest = 1.0 - abs(age - NIGHT_STAR_FLASH_FRAMES / 2) / (
+                NIGHT_STAR_FLASH_FRAMES / 2
+            )
+            b += int(170 * crest)
         px(c, sx, sy, (b, b, min(255, b + 24)))
 
 
 def draw_lamp_glow(c, frame):
     pulse = 24 + int(10 * math.sin(frame * 0.10))
+    pole = (1, 2, 4)
+    warm_core = (255, clamp(218 + pulse // 2), clamp(112 + pulse))
+    warm_mid = (clamp(152 + pulse), clamp(102 + pulse // 2), 34)
+    warm_low = (clamp(58 + pulse // 2), clamp(40 + pulse // 3), 16)
+
+    hline(c, 39, 20, 4, pole)
+    for y in range(20, 28):
+        px(c, 42, y, pole)
+    px(c, 38, 21, warm_low)
+    px(c, 39, 21, warm_core)
+    px(c, 40, 21, warm_core)
+    px(c, 41, 21, warm_mid)
+    px(c, 39, 22, warm_low)
+    px(c, 40, 22, warm_low)
+
     px(c, 45, 27, (clamp(230 + pulse), clamp(170 + pulse // 2), 45))
     px(c, 46, 27, (clamp(150 + pulse), clamp(105 + pulse // 2), 32))
 
 
+def draw_window_lights(c, frame):
+    for x0, y0, x1, y1, phase in NIGHT_WINDOW_LIGHTS:
+        pulse = 12 + int(8 * math.sin((frame + phase) * 0.035))
+        col = (
+            clamp(178 + pulse),
+            clamp(124 + pulse),
+            clamp(48 + pulse // 2),
+        )
+        rect(c, x0, y0, x1, y1, col)
+
+
 def draw_weather_label(c, font, text):
-    text_w = len(text) * 4
-    pad = 1
-    x0 = max(0, W - text_w - pad * 2)
+    x0, _y0, _x1, _y1, pad = weather_label_bounds(text)
     rect(c, x0, 0, W - 1, 7, (12, 18, 27))
     hline(c, x0, 0, W - x0, (39, 52, 70))
     graphics.DrawText(c, font, x0 + pad, 6, graphics.Color(255, 235, 150), text)
@@ -2778,7 +2899,19 @@ def draw_cloudy(c, frame):
 
 
 def draw_rainy(c, frame):
-    draw_cmh_scene(c, frame, sky_transform=sky_storm)
+    draw_flat_sky(c, STORM_SKY)
+    for _name, region in CLOUD_GROUPS:
+        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, (region,), cloud_storm)
+    draw_storm_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_storm)
+    draw_storm_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_storm)
+    draw_storm_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, building_storm)
+    draw_storm_spans_clipped(
+        c,
+        LANDSCAPE_SPANS,
+        FOREGROUND_REGIONS,
+        foreground_storm,
+        ION_TRAIN_GLAZING_REGIONS,
+    )
     draw_rain(c, frame)
     draw_weather_label(c, FONT, "9C RAIN")
 
@@ -2794,7 +2927,14 @@ def draw_night(c, frame):
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_night)
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_night)
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, building_night)
-    draw_night_spans_clipped(c, LANDSCAPE_SPANS, FOREGROUND_REGIONS, foreground_night)
+    draw_night_spans_clipped(
+        c,
+        LANDSCAPE_SPANS,
+        FOREGROUND_REGIONS,
+        foreground_night,
+        ION_TRAIN_GLAZING_REGIONS,
+    )
+    draw_window_lights(c, frame)
     draw_stars(c, frame)
     draw_lamp_glow(c, frame)
     draw_weather_label(c, FONT, "12C NITE")
