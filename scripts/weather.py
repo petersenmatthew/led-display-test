@@ -9,6 +9,7 @@ For a scene-by-scene visual test that does not require network, run
 weather-test.py instead.
 """
 
+import os
 import time
 import math
 import random
@@ -17,6 +18,8 @@ import urllib.request
 import urllib.error
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
+
 opts = RGBMatrixOptions()
 opts.rows = 32
 opts.cols = 64
@@ -24,7 +27,7 @@ matrix = RGBMatrix(options=opts)
 canvas = matrix.CreateFrameCanvas()
 
 font = graphics.Font()
-font.LoadFont("4x6.bdf")
+font.LoadFont(os.path.join(FONT_DIR, "4x6.bdf"))
 
 W, H = 64, 32
 

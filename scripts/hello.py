@@ -1,5 +1,8 @@
+import os
 import time
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
 
 opts = RGBMatrixOptions()
 opts.rows = 32
@@ -8,7 +11,7 @@ matrix = RGBMatrix(options=opts)
 offscreen = matrix.CreateFrameCanvas()
 
 font = graphics.Font()
-font.LoadFont("7x13.bdf")
+font.LoadFont(os.path.join(FONT_DIR, "7x13.bdf"))
 color = graphics.Color(255, 159, 67)
 
 pos = offscreen.width

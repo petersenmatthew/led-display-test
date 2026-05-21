@@ -1,6 +1,9 @@
+import os
 import time
 import math
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, FrameCanvas, graphics
+
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
 
 opts = RGBMatrixOptions()
 opts.rows = 32
@@ -21,7 +24,7 @@ STUB_X1 = 60     # stub ends here
 
 # Use a big, bold font for the name so it's clearly legible
 fname = graphics.Font()
-fname.LoadFont("6x10.bdf")
+fname.LoadFont(os.path.join(FONT_DIR, "6x10.bdf"))
 
 # Ink color (warm dark brown - matches reference ticket text)
 INK = (38, 16, 4)
@@ -108,7 +111,7 @@ bar(front_canvas, 25, 32, 6, 7)   # "2026"
 # Main body is x=0..52 (53 wide). 54 > 53 by 1 — fudge by drawing at x=-1 and
 # clipping, or use 5x8. Use 5x8 for a clean fit with margin.
 fname_small = graphics.Font()
-fname_small.LoadFont("5x8.bdf")
+fname_small.LoadFont(os.path.join(FONT_DIR, "5x8.bdf"))
 # "JUSTIN WU" with 5x8 = 9 * 5 = 45 px wide. Center in main body (53 wide).
 name = "JUSTIN WU"
 name_width = 5 * len(name)
@@ -142,7 +145,7 @@ perforation(back_canvas)
 # Back side: same stylized layout but flipped feel — Y COMBINATOR stamp
 # Big "YC" centered
 fyc = graphics.Font()
-fyc.LoadFont("7x13.bdf")
+fyc.LoadFont(os.path.join(FONT_DIR, "7x13.bdf"))
 # "YC" = 2 chars * 7 = 14 px
 yc_x = (PERF - 14) // 2
 graphics.DrawText(back_canvas, fyc, yc_x, 19, INK_C, "YC")

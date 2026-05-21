@@ -1,6 +1,9 @@
+import os
 import time
 from datetime import datetime
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
 
 opts = RGBMatrixOptions()
 opts.rows = 32
@@ -10,13 +13,13 @@ offscreen = matrix.CreateFrameCanvas()
 
 # Fonts
 font_tiny = graphics.Font()
-font_tiny.LoadFont("tom-thumb.bdf")
+font_tiny.LoadFont(os.path.join(FONT_DIR, "tom-thumb.bdf"))
 
 font_small = graphics.Font()
-font_small.LoadFont("5x7.bdf")
+font_small.LoadFont(os.path.join(FONT_DIR, "5x7.bdf"))
 
 font_med = graphics.Font()
-font_med.LoadFont("6x9.bdf")
+font_med.LoadFont(os.path.join(FONT_DIR, "6x9.bdf"))
 
 # Colors
 color_class = graphics.Color(255, 255, 255)
