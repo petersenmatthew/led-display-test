@@ -1,20 +1,15 @@
 """
-Waterloo, Ontario live weather display.
+Weather scene tester — cycles through every weather scene on the panel
+so you can visually QA each one without waiting on real conditions.
 
-Pulls current conditions from Open-Meteo (no API key required) for
-lat=43.4643, lon=-80.5204, picks the matching animated scene, and shows
-the live temperature + condition label in the top-left corner.
-
-For a scene-by-scene visual test that does not require network, run
-weather-test.py instead.
+Each scene runs for ~9 seconds with a placeholder temperature label,
+then advances to the next. For the live-data version that pulls real
+conditions from Open-Meteo for Waterloo, see weather.py.
 """
 
 import time
 import math
 import random
-import json
-import urllib.request
-import urllib.error
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
 opts = RGBMatrixOptions()
@@ -403,90 +398,31 @@ def draw_label(c, text):
     graphics.DrawText(c, font, pad, 6, color, text)
 
 
-# ─── live weather fetch (Open-Meteo) ───────────────────────────────────────
+# ─── weather demo cycle ─────────────────────────────────────────────────────
+# (label_text, scene_fn). On the Pi, swap this for a live API read.
 
-LAT, LON = 43.4643, -80.5204  # Waterloo, Ontario
-WEATHER_URL = (
-    "https://api.open-meteo.com/v1/forecast"
-    "?latitude={lat}&longitude={lon}"
-    "&current=temperature_2m,weather_code,is_day"
-    "&timezone=auto"
-).format(lat=LAT, lon=LON)
+SCENES = [
+    ("18\xb0C SUN",   draw_sunny),
+    ("14\xb0C CLDY",  draw_cloudy),
+    ("9\xb0C RAIN",   draw_rainy),
+    ("-3\xb0C SNOW",  draw_snowy),
+    ("12\xb0C NITE",  draw_night),
+]
 
-REFRESH_SECONDS = 600  # pull new conditions every 10 minutes
-HTTP_TIMEOUT = 10
+FRAMES_PER_SCENE = 180  # ~9s at 50ms/frame
 
-# WMO weather codes → (short label, scene function).
-# Night override is applied separately for clear/partly-cloudy codes.
-def classify(weather_code, is_day):
-    c = weather_code
-    if c in (0,):
-        return ("CLR", draw_sunny if is_day else draw_night)
-    if c in (1, 2):
-        return ("PCLD", draw_sunny if is_day else draw_night)
-    if c in (3,):
-        return ("CLDY", draw_cloudy)
-    if c in (45, 48):
-        return ("FOG", draw_cloudy)
-    if c in (51, 53, 55, 56, 57):
-        return ("DRZL", draw_rainy)
-    if c in (61, 63, 65, 66, 67, 80, 81, 82):
-        return ("RAIN", draw_rainy)
-    if c in (71, 73, 75, 77, 85, 86):
-        return ("SNOW", draw_snowy)
-    if c in (95, 96, 99):
-        return ("STRM", draw_rainy)
-    return ("?", draw_cloudy)
-
-
-def fetch_weather():
-    """Return (temp_c:int, weather_code:int, is_day:bool) or None on failure."""
-    try:
-        with urllib.request.urlopen(WEATHER_URL, timeout=HTTP_TIMEOUT) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        cur = data["current"]
-        return (
-            int(round(cur["temperature_2m"])),
-            int(cur["weather_code"]),
-            bool(cur["is_day"]),
-        )
-    except (urllib.error.URLError, ValueError, KeyError, OSError):
-        return None
-
-
-def make_label(temp_c, cond):
-    return "{:d}\xb0C {}".format(temp_c, cond)
-
-
-# ─── main loop ─────────────────────────────────────────────────────────────
-
-current = fetch_weather()
-if current is None:
-    # No network yet — fall back to a neutral overcast scene until next try.
-    label = "-- NET"
-    draw_fn = draw_cloudy
-else:
-    temp_c, code, is_day = current
-    cond, draw_fn = classify(code, is_day)
-    label = make_label(temp_c, cond)
-
-last_fetch = time.time()
-frame = 0
+scene_idx = 0
+scene_frame = 0
 
 while True:
     canvas.Clear()
-    draw_fn(canvas, frame)
+    label, draw_fn = SCENES[scene_idx]
+    draw_fn(canvas, scene_frame)
     draw_label(canvas, label)
     canvas = matrix.SwapOnVSync(canvas)
 
-    frame += 1
-    if time.time() - last_fetch >= REFRESH_SECONDS:
-        result = fetch_weather()
-        last_fetch = time.time()
-        if result is not None:
-            temp_c, code, is_day = result
-            cond, draw_fn = classify(code, is_day)
-            label = make_label(temp_c, cond)
-        # On failure, keep showing the last good reading.
-
+    scene_frame += 1
+    if scene_frame >= FRAMES_PER_SCENE:
+        scene_frame = 0
+        scene_idx = (scene_idx + 1) % len(SCENES)
     time.sleep(0.05)
