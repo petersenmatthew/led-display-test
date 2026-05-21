@@ -39,3 +39,5 @@ sudo python3 my_picture.py
 ```
 
 PNG must be 64x32.
+
+
