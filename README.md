@@ -23,3 +23,19 @@ sudo python web/mqtt_listener.py   # in another terminal
 ```
 
 Needs Mosquitto on `localhost:1883`.
+
+## Make Pi script
+
+On laptop:
+
+```bash
+python3 scripts/png_to_matrix_script.py assets/my_picture.png my_picture.py
+```
+
+On Pi:
+
+```bash
+sudo python3 my_picture.py
+```
+
+PNG must be 64x32.

@@ -58,7 +58,7 @@ def disc(c, cx, cy, r, col):
 
 def draw_sunny(c, f):
     # Sky: warm blue gradient
-    vgrad(c, 0, 63, 0, 21, (90, 165, 240), (185, 220, 245))
+    vgrad(c, 0, 63, 0, 27, (90, 165, 240), (185, 220, 245))
 
     # Sun (top-right area), with rotating rays
     sx, sy = 52, 8
@@ -76,20 +76,45 @@ def draw_sunny(c, f):
 
     # Far hills (lighter green, parallax)
     for x in range(W):
-        hy = int(20 + 1.5 * math.sin(x * 0.13))
-        for y in range(hy, 24):
+        hy = int(24 + 1.5 * math.sin(x * 0.13))
+        for y in range(hy, 28):
             px(c, x, y, (110, 175, 90))
 
     # Front hills (darker, rolling)
     for x in range(W):
-        hy = int(23 + 2.0 * math.sin(x * 0.18 + 1.3))
+        hy = int(27 + 2.0 * math.sin(x * 0.18 + 1.3))
         for y in range(hy, H):
             px(c, x, y, (70, 145, 55))
     # Grass tufts — sparse, only outside the building footprint
     for x in range(24, W, 7):
-        y = 24 + ((x * 7) % 3)
+        y = 28 + ((x * 7) % 3)
         px(c, x, y, (150, 210, 90))
-        px(c, x, y + 1, (95, 160, 65))
+        if y + 1 < H:
+            px(c, x, y + 1, (95, 160, 65))
+
+    # Wildflowers scattered in the grass (outside building footprint).
+    # Each flower is a 3x3 head (4 petals + yellow center) on a short stem.
+    # cy = center row of the flower head; stem drops down 2 px below.
+    STEM = (60, 130, 50)
+    CENTER = (255, 220, 80)
+    flowers = [
+        (27, 28, (240,  90, 110)),  # pink
+        (35, 29, (210, 110, 230)),  # purple
+        (43, 28, (235, 235, 245)),  # white
+        (52, 29, (255, 140,  60)),  # orange
+        (60, 28, (240,  90, 110)),  # pink
+    ]
+    for fx, cy, petal in flowers:
+        # 4 petals in a + pattern
+        px(c, fx,     cy - 1, petal)
+        px(c, fx,     cy + 1, petal)
+        px(c, fx - 1, cy,     petal)
+        px(c, fx + 1, cy,     petal)
+        # Bright yellow center
+        px(c, fx, cy, CENTER)
+        # Short stem down into the grass
+        for sy in range(cy + 2, min(H, cy + 4)):
+            px(c, fx, sy, STEM)
 
     # Easter egg: Claudette Millar Hall (UW residence)
     draw_cmh(c, f)
@@ -315,7 +340,7 @@ def draw_cmh(c, f):
     WINDOW = (40, 50, 70)
 
     x0, x1 = 4, 21      # 18 wide
-    y0, y1 = 6, 24      # 19 tall
+    y0, y1 = 9, 27      # 19 tall, base sits in the grass
 
     # Beige flanks (left + right, 4 px wide each)
     rect(c, x0,     y0, x0 + 3, y1, BEIGE)
