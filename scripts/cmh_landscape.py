@@ -49,9 +49,124 @@ def draw_spans(c, spans):
             hline(c, x0, y, length, PALETTE[palette_index])
 
 
-def draw_cmh_landscape(c):
-    """Draw the exact 64x32 landscape frame."""
+def in_region(x, y, region):
+    x0, y0, x1, y1 = region
+    return x0 <= x <= x1 and y0 <= y <= y1
+
+
+def in_any_region(x, y, regions):
+    return any(in_region(x, y, region) for region in regions)
+
+
+def source_color(x, y):
+    for x0, length, palette_index in LANDSCAPE_SPANS[y]:
+        if x0 <= x < x0 + length:
+            return PALETTE[palette_index]
+    return (0, 0, 0)
+
+
+def draw_spans_clipped(c, spans, regions, dx=0, dy=0):
+    for y, row in enumerate(spans):
+        for x0, length, palette_index in row:
+            col = PALETTE[palette_index]
+            for x in range(x0, x0 + length):
+                if in_any_region(x, y, regions):
+                    px(c, x + dx, y + dy, col)
+
+
+def draw_spans_except(c, spans, regions):
+    for y, row in enumerate(spans):
+        for x0, length, palette_index in row:
+            col = PALETTE[palette_index]
+            for x in range(x0, x0 + length):
+                if not in_any_region(x, y, regions):
+                    px(c, x, y, col)
+
+
+def fill_cloud_backdrops(c):
+    for x0, y0, x1, y1 in CLOUD_REGIONS:
+        for y in range(y0, y1 + 1):
+            col = source_color(0, y)
+            hline(c, x0, y, x1 - x0 + 1, col)
+
+
+def draw_exact_reference(c):
+    """Draw the unlayered source frame for regression checks."""
     draw_spans(c, LANDSCAPE_SPANS)
+
+
+def draw_sky(c):
+    draw_spans_except(c, LANDSCAPE_SPANS, SKY_EXCLUSION_REGIONS)
+    fill_cloud_backdrops(c)
+
+
+def draw_sun(c, frame=0):
+    """Future sun layer; intentionally blank so the reference stays exact."""
+
+
+def draw_clouds(c, frame=0):
+    for _name, region in CLOUD_GROUPS:
+        draw_spans_clipped(c, LANDSCAPE_SPANS, (region,))
+
+
+def draw_left_building(c):
+    draw_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS)
+
+
+def draw_main_building(c):
+    draw_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS)
+
+
+def draw_right_foreground(c):
+    draw_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS)
+
+
+def draw_foreground(c):
+    draw_spans_clipped(c, LANDSCAPE_SPANS, FOREGROUND_REGIONS)
+
+
+def draw_cmh_landscape(c, frame=0):
+    """Draw the exact 64x32 landscape from named, editable layers."""
+    draw_sky(c)
+    draw_sun(c, frame)
+    draw_clouds(c, frame)
+    draw_left_building(c)
+    draw_main_building(c)
+    draw_right_foreground(c)
+    draw_foreground(c)
+
+
+CLOUD_GROUPS = (
+    ("left_cloud", (2, 6, 15, 10)),
+    ("right_cloud", (45, 6, 63, 10)),
+    ("lower_right_cloud", (51, 17, 63, 19)),
+)
+
+CLOUD_REGIONS = tuple(region for _name, region in CLOUD_GROUPS)
+
+LEFT_BUILDING_REGIONS = (
+    (0, 16, 16, 21),
+)
+
+MAIN_BUILDING_REGIONS = (
+    (17, 1, 34, 21),
+)
+
+RIGHT_FOREGROUND_REGIONS = (
+    (43, 20, 63, 21),
+)
+
+FOREGROUND_REGIONS = (
+    (0, 22, 63, 31),
+)
+
+SKY_EXCLUSION_REGIONS = (
+    CLOUD_REGIONS
+    + LEFT_BUILDING_REGIONS
+    + MAIN_BUILDING_REGIONS
+    + RIGHT_FOREGROUND_REGIONS
+    + FOREGROUND_REGIONS
+)
 
 
 PALETTE = (
@@ -2438,14 +2553,16 @@ def create_matrix():
 def main():
     matrix = create_matrix()
     canvas = matrix.CreateFrameCanvas()
-    canvas.Clear()
-    draw_cmh_landscape(canvas)
-    canvas = matrix.SwapOnVSync(canvas)
 
     print("Displaying drawn CMH landscape. Press Ctrl+C to stop.")
+    frame = 0
     try:
         while True:
-            time.sleep(3600)
+            canvas.Clear()
+            draw_cmh_landscape(canvas, frame)
+            canvas = matrix.SwapOnVSync(canvas)
+            frame += 1
+            time.sleep(0.05)
     except KeyboardInterrupt:
         matrix.Clear()
 
