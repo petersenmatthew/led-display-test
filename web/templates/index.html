@@ -37,7 +37,7 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    margin-bottom: 28px;
+    margin-bottom: 18px;
   }
   h1 {
     font-size: 15px;
@@ -56,6 +56,52 @@
   }
   .status.ok  { color: var(--ok); }
   .status.err { color: var(--err); }
+
+  .preview {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+  .panel-frame {
+    position: relative;
+    padding: clamp(8px, 2vw, 14px);
+    background: linear-gradient(180deg, #0d0d11 0%, #08080b 100%);
+    border-radius: 3px;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.05),
+      inset 0 -1px 0 rgba(0,0,0,0.6),
+      inset 0 0 0 1px #15151c,
+      0 2px 4px rgba(0,0,0,0.35),
+      0 12px 24px -10px rgba(0,0,0,0.55);
+  }
+  .panel-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 3px;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.012) 0 1px,
+      transparent 1px 4px
+    );
+    opacity: 0.6;
+  }
+  .screw {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #d8d8de 0%, #9a9aa2 40%, #5a5a62 75%, #2c2c32 100%);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.55), inset 0 -1px 1px rgba(0,0,0,0.4);
+    z-index: 3;
+  }
+  .screw.tl { top: 3px; left: 3px; }
+  .screw.tr { top: 3px; right: 3px; }
+  .screw.bl { bottom: 3px; left: 3px; }
+  .screw.br { bottom: 3px; right: 3px; }
+  canvas#led { display: block; }
+
   .label {
     font-size: 11px;
     text-transform: uppercase;
@@ -189,6 +235,16 @@
       <span class="status" id="status">idle</span>
     </header>
 
+    <div class="preview">
+      <div class="panel-frame">
+        <span class="screw tl"></span>
+        <span class="screw tr"></span>
+        <span class="screw bl"></span>
+        <span class="screw br"></span>
+        <canvas id="led"></canvas>
+      </div>
+    </div>
+
     <section>
       <p class="label">mode</p>
       <div class="grid" id="modes">
@@ -222,6 +278,7 @@
   </div>
 
 <script>
+  // ─── Status indicator ───────────────────────────────────────────────────────
   const statusEl = document.getElementById("status");
   let statusTimer = null;
   function flash(text, kind) {
@@ -253,26 +310,319 @@
     }
   }
 
-  // Mode buttons
+  // ─── LED panel simulator ────────────────────────────────────────────────────
+  const COLS = 64;
+  const ROWS = 32;
+
+  let PITCH, MARGIN, LED_R, LED_OFF_R;
+  let frameBuf = new Uint8Array(COLS * ROWS * 3);
+  let brightness = 0.6;
+  let currentMode = "off";
+
+  const canvas = document.getElementById("led");
+  const ctx = canvas.getContext("2d");
+
+  // Off-screen canvas for rasterizing text into the LED grid.
+  const off = document.createElement("canvas");
+  off.width = COLS; off.height = ROWS;
+  const offCtx = off.getContext("2d", { willReadFrequently: true });
+
+  function clearBuf() { frameBuf.fill(0); }
+  function setPx(x, y, r, g, b) {
+    if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+    const i = ((y | 0) * COLS + (x | 0)) * 3;
+    frameBuf[i] = r; frameBuf[i + 1] = g; frameBuf[i + 2] = b;
+  }
+  function fillCircle(cx, cy, r, R, G, B) {
+    const r2 = r * r;
+    for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) {
+      for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy <= r2) setPx(x, y, R, G, B);
+      }
+    }
+  }
+  function ringCircle(cx, cy, r, R, G, B) {
+    const steps = Math.max(12, Math.round(r * 6));
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      setPx(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), R, G, B);
+    }
+  }
+  function rect(x, y, w, h, R, G, B) {
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) setPx(x + i, y + j, R, G, B);
+  }
+  function strokeRect(x, y, w, h, R, G, B) {
+    for (let i = 0; i < w; i++) { setPx(x + i, y, R, G, B); setPx(x + i, y + h - 1, R, G, B); }
+    for (let j = 0; j < h; j++) { setPx(x, y + j, R, G, B); setPx(x + w - 1, y + j, R, G, B); }
+  }
+  function drawText(text, x, y, color, size) {
+    offCtx.clearRect(0, 0, COLS, ROWS);
+    offCtx.fillStyle = color;
+    offCtx.textBaseline = "top";
+    offCtx.font = `bold ${size}px ui-monospace, "SF Mono", Menlo, monospace`;
+    offCtx.fillText(text, x, y);
+    const data = offCtx.getImageData(0, 0, COLS, ROWS).data;
+    for (let py = 0; py < ROWS; py++) {
+      for (let px = 0; px < COLS; px++) {
+        const idx = (py * COLS + px) * 4;
+        if (data[idx + 3] > 90) setPx(px, py, data[idx], data[idx + 1], data[idx + 2]);
+      }
+    }
+  }
+  function hsl(h, s, l) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r, g, b;
+    if (h < 60)       [r, g, b] = [c, x, 0];
+    else if (h < 120) [r, g, b] = [x, c, 0];
+    else if (h < 180) [r, g, b] = [0, c, x];
+    else if (h < 240) [r, g, b] = [0, x, c];
+    else if (h < 300) [r, g, b] = [x, 0, c];
+    else              [r, g, b] = [c, 0, x];
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+
+  // ─── Per-mode mockups ───────────────────────────────────────────────────────
+  const painters = {
+    off(t) { clearBuf(); },
+
+    hello(t) {
+      clearBuf();
+      const pulse = 0.7 + 0.3 * Math.sin(t * 2);
+      const c = `rgb(${Math.round(255 * pulse)},${Math.round(159 * pulse)},${Math.round(67 * pulse)})`;
+      drawText("HELLO", 12, 11, c, 11);
+    },
+
+    carousel(t) {
+      clearBuf();
+      const msg = "  DORM ROOM  ";
+      const scroll = Math.floor((t * 14) % (msg.length * 7));
+      offCtx.clearRect(0, 0, COLS, ROWS);
+      offCtx.fillStyle = "#6fd49a";
+      offCtx.textBaseline = "top";
+      offCtx.font = `bold 11px ui-monospace, monospace`;
+      offCtx.fillText(msg, COLS - scroll, 11);
+      offCtx.fillText(msg, COLS - scroll + msg.length * 7, 11);
+      const data = offCtx.getImageData(0, 0, COLS, ROWS).data;
+      for (let py = 0; py < ROWS; py++) {
+        for (let px = 0; px < COLS; px++) {
+          const idx = (py * COLS + px) * 4;
+          if (data[idx + 3] > 90) setPx(px, py, data[idx], data[idx + 1], data[idx + 2]);
+        }
+      }
+    },
+
+    jaylen(t) {
+      clearBuf();
+      // Stylized number jersey: "JB" over "#7"
+      drawText("JB", 18, 4, "#7ab8ff", 12);
+      drawText("#7", 36, 18, "#ff9f43", 11);
+    },
+
+    basket(t) {
+      clearBuf();
+      const cx = 32, cy = 16, r = 9;
+      fillCircle(cx, cy, r, 230, 110, 36);
+      // Highlight
+      fillCircle(cx - 3, cy - 3, 2, 255, 170, 90);
+      // Seams
+      for (let y = cy - r; y <= cy + r; y++) setPx(cx, y, 70, 30, 10);
+      for (let x = cx - r; x <= cx + r; x++) setPx(x, cy, 70, 30, 10);
+      // Curved side seams
+      for (let dy = -r + 1; dy <= r - 1; dy++) {
+        const bow = Math.round(Math.sqrt(Math.max(0, r * r - dy * dy)) * 0.55);
+        setPx(cx - bow - 2, cy + dy, 70, 30, 10);
+        setPx(cx + bow + 2, cy + dy, 70, 30, 10);
+      }
+    },
+
+    weather(t) {
+      clearBuf();
+      // Sun
+      const sx = 14, sy = 16;
+      fillCircle(sx, sy, 4, 255, 210, 80);
+      const rot = t * 0.6;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + rot;
+        const x = Math.round(sx + Math.cos(a) * 7);
+        const y = Math.round(sy + Math.sin(a) * 7);
+        setPx(x, y, 255, 220, 110);
+      }
+      // Temperature label
+      drawText("72°", 34, 11, "#d8d8e0", 11);
+    },
+
+    rainbow(t) {
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const h = ((x / COLS) * 360 + t * 60) % 360;
+          const [r, g, b] = hsl(h, 1, 0.5);
+          setPx(x, y, r, g, b);
+        }
+      }
+    },
+
+    shapes(t) {
+      clearBuf();
+      // Square
+      rect(6, 11, 10, 10, 80, 170, 255);
+      // Circle
+      fillCircle(32, 16, 5, 255, 159, 67);
+      // Triangle (filled, pointing up)
+      const tx = 52, ty = 22;
+      for (let row = 0; row < 11; row++) {
+        const w = row;
+        for (let i = -w; i <= w; i++) setPx(tx + i, ty - row, 200, 80, 220);
+      }
+    },
+
+    pixel(t) {
+      clearBuf();
+      // Static scatter
+      const dots = [
+        [10,  8, 255, 80, 80],
+        [22, 14, 80, 255, 120],
+        [40, 22, 80, 140, 255],
+        [50,  6, 255, 230, 80],
+        [18, 24, 255, 130, 220],
+        [44, 12, 130, 255, 220],
+      ];
+      for (const [x, y, r, g, b] of dots) setPx(x, y, r, g, b);
+      // Moving pixel
+      const mx = 32 + Math.round(22 * Math.sin(t * 1.2));
+      const my = 16 + Math.round(10 * Math.cos(t * 0.9));
+      setPx(mx, my, 255, 255, 255);
+    },
+  };
+
+  // ─── Renderer (LED bloom) ───────────────────────────────────────────────────
+  function centerOf(c, r) {
+    return [MARGIN + c * PITCH + PITCH / 2, MARGIN + r * PITCH + PITCH / 2];
+  }
+
+  function render() {
+    const W = COLS * PITCH + MARGIN * 2;
+    const H = ROWS * PITCH + MARGIN * 2;
+
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#0c0c11");
+    bg.addColorStop(1, "#070709");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Sockets
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const [cx, cy] = centerOf(c, r);
+        ctx.fillStyle = "#15151c";
+        ctx.beginPath();
+        ctx.arc(cx, cy, LED_OFF_R + 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#1f1f28";
+        ctx.beginPath();
+        ctx.arc(cx, cy, LED_OFF_R, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Bloom (additive)
+    ctx.globalCompositeOperation = "lighter";
+    const b = brightness;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const i = (r * COLS + c) * 3;
+        const R = frameBuf[i] * b, G = frameBuf[i + 1] * b, B = frameBuf[i + 2] * b;
+        if (R < 1 && G < 1 && B < 1) continue;
+        const [cx, cy] = centerOf(c, r);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, PITCH * 1.5);
+        g.addColorStop(0,    `rgba(${R},${G},${B},0.5)`);
+        g.addColorStop(0.4,  `rgba(${R},${G},${B},0.16)`);
+        g.addColorStop(1,    `rgba(${R},${G},${B},0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, PITCH * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // Core
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const i = (r * COLS + c) * 3;
+        const R = frameBuf[i] * b, G = frameBuf[i + 1] * b, B = frameBuf[i + 2] * b;
+        if (R < 1 && G < 1 && B < 1) continue;
+        const [cx, cy] = centerOf(c, r);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, LED_R + 1.2);
+        g.addColorStop(0,    "#ffffff");
+        g.addColorStop(0.4, `rgb(${R},${G},${B})`);
+        g.addColorStop(1,    `rgba(${R},${G},${B},0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, LED_R + 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function resize() {
+    const parent = canvas.parentElement;
+    const availW = (document.querySelector(".preview").clientWidth) - 32;
+    PITCH = Math.max(4, Math.min(7, availW / (COLS + 1.6)));
+    MARGIN = PITCH * 0.8;
+    LED_R = PITCH * 0.26;
+    LED_OFF_R = PITCH * 0.16;
+
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = Math.round(COLS * PITCH + MARGIN * 2);
+    const cssH = Math.round(ROWS * PITCH + MARGIN * 2);
+    canvas.style.width  = cssW + "px";
+    canvas.style.height = cssH + "px";
+    canvas.width  = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  const start = performance.now();
+  function tick() {
+    const t = (performance.now() - start) / 1000;
+    const paint = painters[currentMode] || painters.off;
+    paint(t);
+    render();
+    requestAnimationFrame(tick);
+  }
+
+  window.addEventListener("resize", resize);
+  resize();
+  requestAnimationFrame(tick);
+
+  // ─── Controls ───────────────────────────────────────────────────────────────
   const modeButtons = document.querySelectorAll("button.mode");
   modeButtons.forEach((btn) => {
     btn.addEventListener("click", async () => {
       const mode = btn.dataset.mode;
+      // Optimistic preview update so the panel reflects the chosen mode immediately.
+      const prevMode = currentMode;
+      currentMode = mode;
+      modeButtons.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
       const ok = await post("/mode", { mode });
       if (ok) {
-        modeButtons.forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
         flash("mode → " + mode, "ok");
+      } else {
+        currentMode = prevMode;
+        modeButtons.forEach((b) => b.classList.toggle("active", b.dataset.mode === prevMode));
       }
     });
   });
 
-  // Brightness
   const slider = document.getElementById("brightness");
   const sliderValue = document.getElementById("brightnessValue");
   let brightnessTimer = null;
   slider.addEventListener("input", () => {
     sliderValue.textContent = slider.value;
+    brightness = parseInt(slider.value, 10) / 100;
   });
   slider.addEventListener("change", () => {
     clearTimeout(brightnessTimer);
@@ -282,8 +632,9 @@
       if (ok) flash("brightness → " + value, "ok");
     }, 50);
   });
+  // Initialize brightness from slider default.
+  brightness = parseInt(slider.value, 10) / 100;
 
-  // Status message
   const form = document.getElementById("statusForm");
   const statusText = document.getElementById("statusText");
   form.addEventListener("submit", async (e) => {
