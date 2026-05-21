@@ -2577,12 +2577,7 @@ def blend_color(col, target, amount):
     )
 
 
-def sky_night(col):
-    return blend_color(scale_color(col, 0.25), (5, 9, 32), 0.70)
-
-
-def cloud_night(col):
-    return blend_color(scale_color(col, 0.38), (14, 18, 36), 0.35)
+NIGHT_SKY = (5, 9, 32)
 
 
 def building_night(col):
@@ -2610,6 +2605,22 @@ def draw_spans_clipped_transformed(c, spans, regions, transform):
                     px(c, x, y, col)
 
 
+def is_source_sky_color(col):
+    return col[0] < 140 and col[2] > col[0] + 60 and col[2] > col[1] + 35
+
+
+def draw_night_spans_clipped(c, spans, regions, transform):
+    for y, row in enumerate(spans):
+        for x0, length, palette_index in row:
+            source = PALETTE[palette_index]
+            if is_source_sky_color(source):
+                continue
+            col = transform(source)
+            for x in range(x0, x0 + length):
+                if in_any_region(x, y, regions):
+                    px(c, x, y, col)
+
+
 def draw_spans_except_transformed(c, spans, regions, transform):
     for y, row in enumerate(spans):
         for x0, length, palette_index in row:
@@ -2628,6 +2639,12 @@ def fill_cloud_backdrops_transformed(c, transform):
 def draw_sky_transformed(c, transform):
     draw_spans_except_transformed(c, LANDSCAPE_SPANS, SKY_EXCLUSION_REGIONS, transform)
     fill_cloud_backdrops_transformed(c, transform)
+
+
+def draw_flat_sky(c, col):
+    for y in range(H):
+        for x in range(W):
+            px(c, x, y, col)
 
 
 def draw_cmh_scene(c, frame=0, sky_transform=None, cloud_transform=None, building_transform=None, foreground_transform=None):
@@ -2727,39 +2744,16 @@ def draw_snow(c, frame):
 
 
 def draw_stars(c, frame):
-    random.seed(7)
-    for _ in range(22):
-        sx = random.randint(0, W - 1)
-        sy = random.randint(0, 15)
-        phase = random.randint(0, 99)
-        b = 135 + int(95 * math.sin((frame + phase) * 0.13))
-        px(c, sx, sy, (max(70, b), max(70, b), min(255, b + 25)))
+    stars = ((7, 5, 0), (13, 12, 29), (40, 5, 58), (56, 14, 87))
+    for sx, sy, phase in stars:
+        b = 165 + int(45 * math.sin((frame + phase) * 0.10))
+        px(c, sx, sy, (b, b, min(255, b + 24)))
 
 
 def draw_lamp_glow(c, frame):
-    pulse = 18 + int(8 * math.sin(frame * 0.10))
-    disc(c, 45, 27, 3, (95 + pulse, 70 + pulse // 2, 24))
-    disc(c, 45, 27, 2, (175 + pulse, 120 + pulse // 2, 35))
-    px(c, 45, 27, (255, 220, 80))
-    px(c, 46, 27, (255, 178, 38))
-    px(c, 45, 28, (210, 138, 34))
-
-
-def draw_ion_train(c, frame):
-    x = int(74 - (frame * 0.42 % 96))
-    y = 24
-    body = (222, 232, 229)
-    teal = (0, 158, 172)
-    window = (28, 48, 64)
-    light = (255, 238, 145)
-    for dx in range(0, 15):
-        px(c, x + dx, y, body)
-        px(c, x + dx, y + 1, teal if dx in (1, 2, 12, 13) else body)
-        px(c, x + dx, y + 2, (72, 78, 82))
-    for dx in (3, 5, 8, 10):
-        px(c, x + dx, y, window)
-    px(c, x, y + 1, light)
-    px(c, x + 14, y + 1, (215, 40, 40))
+    pulse = 24 + int(10 * math.sin(frame * 0.10))
+    px(c, 45, 27, (clamp(230 + pulse), clamp(170 + pulse // 2), 45))
+    px(c, 46, 27, (clamp(150 + pulse), clamp(105 + pulse // 2), 32))
 
 
 def draw_weather_label(c, font, text):
@@ -2775,20 +2769,17 @@ def draw_sunny(c, frame):
     draw_cmh_scene(c, frame)
     draw_weather_sun(c, frame)
     draw_geese_packs(c, frame)
-    draw_ion_train(c, frame)
     draw_weather_label(c, FONT, "18C SUN")
 
 
 def draw_cloudy(c, frame):
     draw_cmh_scene(c, frame, sky_transform=lambda col: blend_color(col, (150, 165, 180), 0.18))
-    draw_ion_train(c, frame)
     draw_weather_label(c, FONT, "14C CLD")
 
 
 def draw_rainy(c, frame):
     draw_cmh_scene(c, frame, sky_transform=sky_storm)
     draw_rain(c, frame)
-    draw_ion_train(c, frame)
     draw_weather_label(c, FONT, "9C RAIN")
 
 
@@ -2799,17 +2790,13 @@ def draw_snowy(c, frame):
 
 
 def draw_night(c, frame):
-    draw_cmh_scene(
-        c,
-        frame,
-        sky_transform=sky_night,
-        cloud_transform=cloud_night,
-        building_transform=building_night,
-        foreground_transform=foreground_night,
-    )
+    draw_flat_sky(c, NIGHT_SKY)
+    draw_night_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_night)
+    draw_night_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_night)
+    draw_night_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, building_night)
+    draw_night_spans_clipped(c, LANDSCAPE_SPANS, FOREGROUND_REGIONS, foreground_night)
     draw_stars(c, frame)
     draw_lamp_glow(c, frame)
-    draw_ion_train(c, frame + 80)
     draw_weather_label(c, FONT, "12C NITE")
 
 
