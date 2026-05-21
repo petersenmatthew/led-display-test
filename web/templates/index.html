@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#050507" />
+<title>LED Control</title>
+<style>
+  :root {
+    --bg: #050507;
+    --panel: #0c0c11;
+    --ink: #d8d8e0;
+    --muted: #6f6f7d;
+    --accent: #ff9f43;
+    --line: #1c1c25;
+    --ok: #6fd49a;
+    --err: #ff8a78;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 28px 20px 40px;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 0;
+    color: var(--ink);
+  }
+  .status {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .status.ok  { color: var(--ok); }
+  .status.err { color: var(--err); }
+  .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0 0 10px 2px;
+  }
+  section { margin-bottom: 28px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  @media (min-width: 420px) {
+    .grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  button.mode {
+    appearance: none;
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 10px;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button.mode:hover { border-color: #2a2a35; }
+  button.mode:active { background: #15151c; }
+  button.mode.active {
+    background: var(--accent);
+    color: #1a1a1a;
+    border-color: transparent;
+    font-weight: 600;
+  }
+  button.off {
+    grid-column: 1 / -1;
+    background: #15101a;
+    color: #b89aa8;
+    border-color: #2a1a25;
+  }
+  button.off.active {
+    background: #3a1a2a;
+    color: #ffd1c4;
+    border-color: transparent;
+    font-weight: 600;
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .slider-value {
+    min-width: 38px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 15px;
+  }
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--line);
+    border-radius: 2px;
+    outline: none;
+    margin: 0;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  }
+  .status-form {
+    display: flex;
+    gap: 8px;
+  }
+  input[type="text"] {
+    flex: 1;
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font: inherit;
+    font-size: 14px;
+    outline: none;
+    min-width: 0;
+  }
+  input[type="text"]:focus { border-color: #2a2a35; }
+  button.send {
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0 16px;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.send:hover { border-color: #2a2a35; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>LED Control</h1>
+      <span class="status" id="status">idle</span>
+    </header>
+
+    <section>
+      <p class="label">mode</p>
+      <div class="grid" id="modes">
+        <button class="mode" data-mode="hello">hello</button>
+        <button class="mode" data-mode="carousel">carousel</button>
+        <button class="mode" data-mode="jaylen">jaylen</button>
+        <button class="mode" data-mode="basket">basket</button>
+        <button class="mode" data-mode="weather">weather</button>
+        <button class="mode" data-mode="rainbow">rainbow</button>
+        <button class="mode" data-mode="shapes">shapes</button>
+        <button class="mode" data-mode="pixel">pixel</button>
+        <button class="mode off" data-mode="off">off</button>
+      </div>
+    </section>
+
+    <section>
+      <p class="label">brightness</p>
+      <div class="slider-row">
+        <input type="range" id="brightness" min="0" max="100" value="60" />
+        <span class="slider-value" id="brightnessValue">60</span>
+      </div>
+    </section>
+
+    <section>
+      <p class="label">status message</p>
+      <form class="status-form" id="statusForm">
+        <input type="text" id="statusText" placeholder="hello world" autocomplete="off" />
+        <button type="submit" class="send">send</button>
+      </form>
+    </section>
+  </div>
+
+<script>
+  const statusEl = document.getElementById("status");
+  let statusTimer = null;
+  function flash(text, kind) {
+    statusEl.textContent = text;
+    statusEl.className = "status" + (kind ? " " + kind : "");
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => {
+      statusEl.textContent = "idle";
+      statusEl.className = "status";
+    }, 2200);
+  }
+
+  async function post(path, body) {
+    try {
+      const r = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || data.ok === false) {
+        flash(data.error || `error ${r.status}`, "err");
+        return false;
+      }
+      return true;
+    } catch (e) {
+      flash("network error", "err");
+      return false;
+    }
+  }
+
+  // Mode buttons
+  const modeButtons = document.querySelectorAll("button.mode");
+  modeButtons.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const mode = btn.dataset.mode;
+      const ok = await post("/mode", { mode });
+      if (ok) {
+        modeButtons.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        flash("mode → " + mode, "ok");
+      }
+    });
+  });
+
+  // Brightness
+  const slider = document.getElementById("brightness");
+  const sliderValue = document.getElementById("brightnessValue");
+  let brightnessTimer = null;
+  slider.addEventListener("input", () => {
+    sliderValue.textContent = slider.value;
+  });
+  slider.addEventListener("change", () => {
+    clearTimeout(brightnessTimer);
+    brightnessTimer = setTimeout(async () => {
+      const value = parseInt(slider.value, 10);
+      const ok = await post("/brightness", { value });
+      if (ok) flash("brightness → " + value, "ok");
+    }, 50);
+  });
+
+  // Status message
+  const form = document.getElementById("statusForm");
+  const statusText = document.getElementById("statusText");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = statusText.value.trim();
+    if (!text) return;
+    const ok = await post("/status", { text });
+    if (ok) {
+      flash("status sent", "ok");
+      statusText.blur();
+    }
+  });
+</script>
+</body>
+</html>
