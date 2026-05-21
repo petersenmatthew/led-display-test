@@ -5,6 +5,11 @@ from rgbmatrix import RGBMatrix, RGBMatrixOptions, FrameCanvas, graphics
 
 FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
 
+# Load font before creating RGBMatrix — the matrix constructor drops root
+# privileges to user "daemon", which can't read files inside /home/pi.
+fname = graphics.Font()
+fname.LoadFont(os.path.join(FONT_DIR, "6x10.bdf"))
+
 opts = RGBMatrixOptions()
 opts.rows = 32
 opts.cols = 64
@@ -21,10 +26,6 @@ CENTER_X = 32
 PERF = 53        # perforation column
 STUB_X0 = 55     # ADMIT ONE stub starts here
 STUB_X1 = 60     # stub ends here
-
-# Use a big, bold font for the name so it's clearly legible
-fname = graphics.Font()
-fname.LoadFont(os.path.join(FONT_DIR, "6x10.bdf"))
 
 # Ink color (warm dark brown - matches reference ticket text)
 INK = (38, 16, 4)

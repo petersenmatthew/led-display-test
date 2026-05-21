@@ -5,13 +5,8 @@ from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
 FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
 
-opts = RGBMatrixOptions()
-opts.rows = 32
-opts.cols = 64
-matrix = RGBMatrix(options=opts)
-offscreen = matrix.CreateFrameCanvas()
-
-# Fonts
+# Load fonts before creating RGBMatrix — the matrix constructor drops root
+# privileges to user "daemon", which can't read files inside /home/pi.
 font_tiny = graphics.Font()
 font_tiny.LoadFont(os.path.join(FONT_DIR, "tom-thumb.bdf"))
 
@@ -20,6 +15,12 @@ font_small.LoadFont(os.path.join(FONT_DIR, "5x7.bdf"))
 
 font_med = graphics.Font()
 font_med.LoadFont(os.path.join(FONT_DIR, "6x9.bdf"))
+
+opts = RGBMatrixOptions()
+opts.rows = 32
+opts.cols = 64
+matrix = RGBMatrix(options=opts)
+offscreen = matrix.CreateFrameCanvas()
 
 # Colors
 color_class = graphics.Color(255, 255, 255)
