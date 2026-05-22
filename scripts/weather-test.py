@@ -2739,17 +2739,26 @@ def draw_flat_sky(c, col):
             px(c, x, y, col)
 
 
-def draw_cmh_scene(c, frame=0, sky_transform=None, cloud_transform=None, building_transform=None, foreground_transform=None):
+def draw_cmh_scene(
+    c,
+    frame=0,
+    sky_transform=None,
+    cloud_transform=None,
+    building_transform=None,
+    foreground_transform=None,
+    draw_cloud_layer=True,
+):
     if sky_transform is None:
         draw_sky(c)
     else:
         draw_sky_transformed(c, sky_transform)
 
-    if cloud_transform is None:
-        draw_clouds(c, frame)
-    else:
-        for _name, region in CLOUD_GROUPS:
-            draw_spans_clipped_transformed(c, LANDSCAPE_SPANS, (region,), cloud_transform)
+    if draw_cloud_layer:
+        if cloud_transform is None:
+            draw_clouds(c, frame)
+        else:
+            for _name, region in CLOUD_GROUPS:
+                draw_spans_clipped_transformed(c, LANDSCAPE_SPANS, (region,), cloud_transform)
 
     if building_transform is None:
         draw_left_building(c)
@@ -2879,50 +2888,188 @@ def draw_window_lights(c, frame):
         rect(c, x0, y0, x1, y1, col)
 
 
-def draw_weather_label(c, font, text):
-    x0, _y0, _x1, _y1, pad = weather_label_bounds(text)
-    rect(c, x0, 0, W - 1, 7, (12, 18, 27))
-    hline(c, x0, 0, W - x0, (39, 52, 70))
-    graphics.DrawText(c, font, x0 + pad, 6, graphics.Color(255, 235, 150), text)
+PHASE_DAY = "day"
+PHASE_SUNRISE = "sunrise"
+PHASE_SUNSET = "sunset"
+PHASE_NIGHT = "night"
+
+COND_CLEAR = "clear"
+COND_CLOUDY = "cloudy"
+COND_RAIN = "rain"
+COND_SNOW = "snow"
+COND_STORM = "storm"
+
+CLOUD_NONE = "none"
+CLOUD_PARTIAL = "partial"
+CLOUD_OVERCAST = "overcast"
 
 
-def draw_sunny(c, frame):
-    draw_cmh_scene(c, frame)
-    draw_weather_sun(c, frame)
-    draw_geese_packs(c, frame)
-    draw_weather_label(c, FONT, "18C SUN")
+def sky_sunrise(col):
+    return blend_color(col, (238, 160, 96), 0.32)
 
 
-def draw_cloudy(c, frame):
-    draw_cmh_scene(c, frame, sky_transform=lambda col: blend_color(col, (150, 165, 180), 0.18))
-    draw_weather_label(c, FONT, "14C CLD")
+def sky_sunset(col):
+    return blend_color(col, (218, 104, 126), 0.38)
 
 
-def draw_rainy(c, frame):
-    draw_flat_sky(c, STORM_SKY)
-    for _name, region in CLOUD_GROUPS:
-        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, (region,), cloud_storm)
-    draw_storm_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_storm)
-    draw_storm_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_storm)
-    draw_storm_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, building_storm)
-    draw_storm_spans_clipped(
-        c,
-        LANDSCAPE_SPANS,
-        FOREGROUND_REGIONS,
-        foreground_storm,
-        ION_TRAIN_GLAZING_REGIONS,
-    )
-    draw_rain(c, frame)
-    draw_weather_label(c, FONT, "9C RAIN")
+def cloud_sunrise(col):
+    return blend_color(scale_color(col, 0.92), (240, 174, 148), 0.34)
 
 
-def draw_snowy(c, frame):
-    draw_cmh_scene(c, frame, sky_transform=sky_winter)
-    draw_snow(c, frame)
-    draw_weather_label(c, FONT, "-3C SNW")
+def cloud_sunset(col):
+    return blend_color(scale_color(col, 0.86), (218, 122, 152), 0.42)
 
 
-def draw_night(c, frame):
+def building_sunrise(col):
+    return blend_color(scale_color(col, 0.92), (236, 142, 84), 0.18)
+
+
+def building_sunset(col):
+    return blend_color(scale_color(col, 0.82), (198, 92, 120), 0.24)
+
+
+def foreground_sunrise(col):
+    return blend_color(scale_color(col, 0.90), (178, 104, 66), 0.18)
+
+
+def foreground_sunset(col):
+    return blend_color(scale_color(col, 0.78), (128, 70, 96), 0.28)
+
+
+def cloud_night(col):
+    return blend_color(scale_color(col, 0.44), (42, 46, 68), 0.52)
+
+
+def storm_sky_for_phase(phase):
+    if phase == PHASE_SUNRISE:
+        return (72, 62, 88)
+    if phase == PHASE_SUNSET:
+        return (62, 52, 86)
+    if phase == PHASE_NIGHT:
+        return (10, 14, 36)
+    return STORM_SKY
+
+
+def draw_vertical_gradient(c, y0, y1, top, bot):
+    span = max(1, y1 - y0)
+    for y in range(y0, y1 + 1):
+        hline(c, 0, y, W, blend_color(top, bot, (y - y0) / span))
+
+
+def draw_twilight_sky(c, phase, storm=False):
+    if phase == PHASE_SUNRISE:
+        stops = (
+            (0, (156, 88, 132)),
+            (7, (226, 122, 96)),
+            (14, (246, 160, 82)),
+            (21, (156, 82, 118)),
+            (31, (70, 52, 86)),
+        )
+    else:
+        stops = (
+            (0, (170, 76, 126)),
+            (7, (232, 112, 86)),
+            (14, (244, 132, 72)),
+            (21, (118, 70, 126)),
+            (31, (54, 42, 78)),
+        )
+    if storm:
+        stops = tuple(
+            (y, blend_color(col, (42, 46, 78), 0.45))
+            for y, col in stops
+        )
+
+    for (y0, top), (y1, bot) in zip(stops, stops[1:]):
+        draw_vertical_gradient(c, y0, y1, top, bot)
+
+
+def draw_twilight_wisps(c, phase):
+    if phase == PHASE_SUNRISE:
+        streaks = (
+            (16, 3, 24, (248, 178, 122)),
+            (21, 4, 14, (236, 134, 126)),
+            (2, 9, 12, (244, 162, 118)),
+            (48, 10, 10, (250, 184, 114)),
+        )
+    else:
+        streaks = (
+            (10, 3, 25, (248, 160, 112)),
+            (18, 4, 18, (236, 116, 124)),
+            (3, 11, 10, (246, 132, 98)),
+            (45, 9, 13, (250, 168, 100)),
+        )
+
+    for x0, y, length, col in streaks:
+        for x in range(x0, min(W, x0 + length)):
+            if x % 3 != 1:
+                px_open_sky(c, x, y, col)
+        for x in range(x0 + 5, min(W, x0 + length - 4)):
+            if x % 4 == 0:
+                px_open_sky(c, x, y + 1, blend_color(col, (255, 214, 150), 0.22))
+
+
+def draw_open_sky_details(c, transform):
+    for y in range(0, 22):
+        for x in range(W):
+            if in_any_region(x, y, SKY_EXCLUSION_REGIONS):
+                continue
+            for x0, length, palette_index in LANDSCAPE_SPANS[y]:
+                if x0 <= x < x0 + length:
+                    col = PALETTE[palette_index]
+                    if not is_source_sky_color(col):
+                        px(c, x, y, transform(col))
+                    break
+
+
+def tint_for_phase(col, phase, role):
+    if phase == PHASE_SUNRISE:
+        amount = 0.24 if role == "sky" else 0.16
+        return blend_color(col, (232, 142, 92), amount)
+    if phase == PHASE_SUNSET:
+        amount = 0.30 if role == "sky" else 0.22
+        return blend_color(scale_color(col, 0.88), (190, 82, 126), amount)
+    if phase == PHASE_NIGHT:
+        return blend_color(scale_color(col, 0.48), (14, 16, 34), 0.30)
+    return col
+
+
+def px_open_sky(c, x, y, col):
+    if not in_any_region(x, y, SKY_EXCLUSION_REGIONS):
+        px(c, x, y, col)
+
+
+def sky_disc(c, cx, cy, r, col):
+    r2 = r * r
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            if dx * dx + dy * dy <= r2:
+                px_open_sky(c, cx + dx, cy + dy, col)
+
+
+def disc_raw(c, cx, cy, r, col):
+    r2 = r * r
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            if dx * dx + dy * dy <= r2:
+                px(c, cx + dx, cy + dy, col)
+
+
+def draw_low_sun(c, frame, phase):
+    if phase == PHASE_SUNRISE:
+        sx, sy = 34, 24
+        core = (255, 198, 76)
+    elif phase == PHASE_SUNSET:
+        sx, sy = 50, 25
+        core = (255, 132, 66)
+    else:
+        return
+
+    disc_raw(c, sx, sy, 4, blend_color(core, (255, 248, 188), 0.18))
+    disc_raw(c, sx, sy, 3, core)
+    disc_raw(c, sx, sy, 2, (255, 226, 118))
+
+
+def draw_night_base(c, frame):
     draw_flat_sky(c, NIGHT_SKY)
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_night)
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_night)
@@ -2937,7 +3084,271 @@ def draw_night(c, frame):
     draw_window_lights(c, frame)
     draw_stars(c, frame)
     draw_lamp_glow(c, frame)
-    draw_weather_label(c, FONT, "12C NITE")
+
+
+def draw_clouds_for_phase(c, phase):
+    if phase == PHASE_NIGHT:
+        transform = cloud_night
+        draw_fn = draw_night_spans_clipped
+    elif phase == PHASE_SUNRISE:
+        transform = cloud_sunrise
+        draw_fn = draw_storm_spans_clipped
+    elif phase == PHASE_SUNSET:
+        transform = cloud_sunset
+        draw_fn = draw_storm_spans_clipped
+    else:
+        transform = lambda col: blend_color(col, (150, 165, 180), 0.18)
+        draw_fn = draw_spans_clipped_transformed
+
+    for _name, region in CLOUD_GROUPS:
+        draw_fn(c, LANDSCAPE_SPANS, (region,), transform)
+
+
+def cloud_palette_for_phase(phase):
+    if phase == PHASE_NIGHT:
+        return (
+            (72, 78, 104),
+            (48, 54, 80),
+            (30, 36, 60),
+        )
+    if phase == PHASE_SUNRISE:
+        return (
+            (246, 190, 160),
+            (226, 148, 144),
+            (146, 102, 126),
+        )
+    if phase == PHASE_SUNSET:
+        return (
+            (238, 154, 152),
+            (204, 112, 142),
+            (112, 78, 126),
+        )
+    return (
+        (236, 240, 246),
+        (196, 206, 218),
+        (142, 154, 172),
+    )
+
+
+def draw_soft_cloud(c, x, y, rows, palette):
+    colors = {
+        "h": palette[0],
+        "m": palette[1],
+        "s": palette[2],
+    }
+    for dy, spans in enumerate(rows):
+        for x0, length, shade in spans:
+            for dx in range(length):
+                px_open_sky(c, x + x0 + dx, y + dy, colors[shade])
+
+
+def draw_extra_clouds(c, phase, clouds):
+    if clouds != CLOUD_OVERCAST:
+        return
+    palette = cloud_palette_for_phase(phase)
+    small = (
+        ((3, 2, "m"), (6, 3, "h")),
+        ((1, 4, "m"), (5, 6, "h")),
+        ((0, 12, "m"),),
+        ((3, 7, "s"),),
+    )
+    low = (
+        ((4, 3, "h"),),
+        ((1, 8, "m"),),
+        ((0, 11, "m"),),
+        ((3, 6, "s"),),
+    )
+
+    draw_soft_cloud(c, 37, 8, small, palette)
+    draw_soft_cloud(c, 50, 16, low, palette)
+
+
+def draw_cloud_modifier(c, phase, clouds):
+    if clouds == CLOUD_NONE:
+        return
+    draw_clouds_for_phase(c, phase)
+    draw_extra_clouds(c, phase, clouds)
+
+
+def draw_cmh_for_phase(c, frame, phase, condition, clouds):
+    if phase == PHASE_NIGHT:
+        draw_night_base(c, frame)
+        if condition in (COND_CLOUDY, COND_RAIN, COND_STORM):
+            draw_clouds_for_phase(c, phase)
+        else:
+            draw_cloud_modifier(c, phase, clouds)
+        return
+
+    if condition in (COND_RAIN, COND_STORM):
+        if phase in (PHASE_SUNRISE, PHASE_SUNSET):
+            draw_twilight_sky(c, phase, storm=True)
+            draw_low_sun(c, frame, phase)
+            draw_twilight_wisps(c, phase)
+            detail_transform = building_sunrise if phase == PHASE_SUNRISE else building_sunset
+            draw_open_sky_details(c, detail_transform)
+        else:
+            draw_flat_sky(c, storm_sky_for_phase(phase))
+        for _name, region in CLOUD_GROUPS:
+            draw_storm_spans_clipped(
+                c,
+                LANDSCAPE_SPANS,
+                (region,),
+                lambda col: tint_for_phase(cloud_storm(col), phase, "sky"),
+            )
+        draw_storm_spans_clipped(
+            c,
+            LANDSCAPE_SPANS,
+            LEFT_BUILDING_REGIONS,
+            lambda col: tint_for_phase(building_storm(col), phase, "building"),
+        )
+        draw_storm_spans_clipped(
+            c,
+            LANDSCAPE_SPANS,
+            MAIN_BUILDING_REGIONS,
+            lambda col: tint_for_phase(building_storm(col), phase, "building"),
+        )
+        draw_storm_spans_clipped(
+            c,
+            LANDSCAPE_SPANS,
+            RIGHT_FOREGROUND_REGIONS,
+            lambda col: tint_for_phase(building_storm(col), phase, "building"),
+        )
+        draw_storm_spans_clipped(
+            c,
+            LANDSCAPE_SPANS,
+            FOREGROUND_REGIONS,
+            lambda col: tint_for_phase(foreground_storm(col), phase, "foreground"),
+            ION_TRAIN_GLAZING_REGIONS,
+        )
+        return
+
+    if phase == PHASE_SUNRISE:
+        draw_twilight_sky(c, phase)
+        if clouds != CLOUD_OVERCAST:
+            draw_low_sun(c, frame, phase)
+        draw_twilight_wisps(c, phase)
+        draw_open_sky_details(c, building_sunrise)
+        draw_cloud_modifier(c, phase, clouds)
+        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_sunrise)
+        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_sunrise)
+        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, building_sunrise)
+        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, FOREGROUND_REGIONS, foreground_sunrise, ION_TRAIN_GLAZING_REGIONS)
+    elif phase == PHASE_SUNSET:
+        draw_twilight_sky(c, phase)
+        if clouds != CLOUD_OVERCAST:
+            draw_low_sun(c, frame, phase)
+        draw_twilight_wisps(c, phase)
+        draw_open_sky_details(c, building_sunset)
+        draw_cloud_modifier(c, phase, clouds)
+        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_sunset)
+        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_sunset)
+        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, building_sunset)
+        draw_storm_spans_clipped(c, LANDSCAPE_SPANS, FOREGROUND_REGIONS, foreground_sunset, ION_TRAIN_GLAZING_REGIONS)
+    elif clouds == CLOUD_OVERCAST or condition == COND_CLOUDY:
+        draw_cmh_scene(
+            c,
+            frame,
+            sky_transform=lambda col: blend_color(col, (150, 165, 180), 0.18),
+            draw_cloud_layer=False,
+        )
+        draw_cloud_modifier(c, phase, CLOUD_OVERCAST)
+    elif condition == COND_SNOW:
+        draw_cmh_scene(c, frame, sky_transform=sky_winter, draw_cloud_layer=False)
+        draw_cloud_modifier(c, phase, clouds)
+    else:
+        draw_cmh_scene(c, frame, draw_cloud_layer=False)
+        draw_cloud_modifier(c, phase, clouds)
+
+
+def draw_lightning(c, frame):
+    if (frame // 7) % 19 != 0:
+        return
+    bolt = (255, 246, 180)
+    points = ((43, 4), (39, 10), (43, 10), (38, 18))
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        steps = max(abs(x1 - x0), abs(y1 - y0))
+        for i in range(steps + 1):
+            t = i / max(1, steps)
+            px(c, int(x0 + (x1 - x0) * t), int(y0 + (y1 - y0) * t), bolt)
+
+
+def draw_condition_scene(c, frame, condition, phase, clouds, label):
+    draw_cmh_for_phase(c, frame, phase, condition, clouds)
+
+    if condition == COND_CLEAR:
+        if phase == PHASE_DAY and clouds != CLOUD_OVERCAST:
+            draw_weather_sun(c, frame)
+            draw_geese_packs(c, frame)
+        elif phase in (PHASE_SUNRISE, PHASE_SUNSET) and clouds != CLOUD_OVERCAST:
+            draw_geese_packs(c, frame)
+    elif condition == COND_RAIN:
+        draw_rain(c, frame)
+    elif condition == COND_SNOW:
+        draw_snow(c, frame)
+    elif condition == COND_STORM:
+        draw_lightning(c, frame)
+        draw_rain(c, frame)
+
+    draw_weather_label(c, FONT, label)
+
+
+def draw_weather_label(c, font, text):
+    x0, _y0, _x1, _y1, pad = weather_label_bounds(text)
+    rect(c, x0, 0, W - 1, 7, (12, 18, 27))
+    hline(c, x0, 0, W - x0, (39, 52, 70))
+    graphics.DrawText(c, font, x0 + pad, 6, graphics.Color(255, 235, 150), text)
+
+
+def draw_sunny(c, frame):
+    draw_condition_scene(c, frame, COND_CLEAR, PHASE_DAY, CLOUD_NONE, "18C CLR")
+
+
+def draw_partly_cloudy(c, frame):
+    draw_condition_scene(c, frame, COND_CLEAR, PHASE_DAY, CLOUD_PARTIAL, "18C PCLD")
+
+
+def draw_clear_sunrise(c, frame):
+    draw_condition_scene(c, frame, COND_CLEAR, PHASE_SUNRISE, CLOUD_NONE, "18C CLR")
+
+
+def draw_partly_cloudy_sunset(c, frame):
+    draw_condition_scene(c, frame, COND_CLEAR, PHASE_SUNSET, CLOUD_PARTIAL, "14C PCLD")
+
+
+def draw_cloudy_sunset(c, frame):
+    draw_condition_scene(c, frame, COND_CLEAR, PHASE_SUNSET, CLOUD_OVERCAST, "14C CLD")
+
+
+def draw_cloudy(c, frame):
+    draw_condition_scene(c, frame, COND_CLEAR, PHASE_DAY, CLOUD_OVERCAST, "14C CLD")
+
+
+def draw_cloudy_night(c, frame):
+    draw_condition_scene(c, frame, COND_CLEAR, PHASE_NIGHT, CLOUD_OVERCAST, "12C CLD")
+
+
+def draw_rainy(c, frame):
+    draw_condition_scene(c, frame, COND_RAIN, PHASE_DAY, CLOUD_OVERCAST, "9C RAIN")
+
+
+def draw_rain_night(c, frame):
+    draw_condition_scene(c, frame, COND_RAIN, PHASE_NIGHT, CLOUD_OVERCAST, "9C RAIN")
+
+
+def draw_snowy(c, frame):
+    draw_condition_scene(c, frame, COND_SNOW, PHASE_DAY, CLOUD_OVERCAST, "-3C SNW")
+
+
+def draw_storm_sunset(c, frame):
+    draw_condition_scene(c, frame, COND_STORM, PHASE_SUNSET, CLOUD_OVERCAST, "11C STRM")
+
+
+def draw_storm_night(c, frame):
+    draw_condition_scene(c, frame, COND_STORM, PHASE_NIGHT, CLOUD_OVERCAST, "11C STRM")
+
+
+def draw_night(c, frame):
+    draw_condition_scene(c, frame, COND_CLEAR, PHASE_NIGHT, CLOUD_NONE, "12C CLR")
 
 
 def load_font():
@@ -2962,10 +3373,16 @@ FONT = load_font()
 
 SCENES = (
     draw_sunny,
+    draw_partly_cloudy,
     draw_cloudy,
-    draw_rainy,
+    draw_clear_sunrise,
+    draw_partly_cloudy_sunset,
+    draw_cloudy_sunset,
+    draw_cloudy_night,
+    draw_rain_night,
     draw_snowy,
-    draw_night,
+    draw_storm_sunset,
+    draw_storm_night,
 )
 
 

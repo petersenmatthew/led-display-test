@@ -14,6 +14,7 @@ import time
 import math
 import random
 import json
+import datetime as dt
 import urllib.request
 import urllib.error
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
@@ -408,6 +409,234 @@ def draw_label(c, text):
     graphics.DrawText(c, font, pad, 6, color, text)
 
 
+# ─── composable weather renderer ───────────────────────────────────────────
+
+PHASE_DAY = "day"
+PHASE_SUNRISE = "sunrise"
+PHASE_SUNSET = "sunset"
+PHASE_NIGHT = "night"
+TWILIGHT_WINDOW = dt.timedelta(minutes=45)
+
+COND_CLEAR = "clear"
+COND_CLOUDY = "cloudy"
+COND_RAIN = "rain"
+COND_DRIZZLE = "drizzle"
+COND_SNOW = "snow"
+COND_STORM = "storm"
+
+CLOUD_NONE = "none"
+CLOUD_PARTIAL = "partial"
+CLOUD_OVERCAST = "overcast"
+
+
+def draw_phase_sky(c, phase, condition, clouds):
+    stormy = condition in (COND_RAIN, COND_DRIZZLE, COND_STORM)
+    snowy = condition == COND_SNOW
+    cloudy = clouds == CLOUD_OVERCAST or condition == COND_CLOUDY
+
+    if phase == PHASE_NIGHT:
+        top, bot = (5, 9, 32), (24, 22, 52)
+    elif phase == PHASE_SUNRISE:
+        top, bot = ((28, 45, 84), (238, 150, 94))
+        if stormy:
+            top, bot = (35, 42, 70), (132, 92, 94)
+        elif snowy:
+            top, bot = (72, 92, 130), (242, 176, 140)
+    elif phase == PHASE_SUNSET:
+        top, bot = ((54, 42, 92), (238, 116, 68))
+        if stormy:
+            top, bot = (38, 43, 70), (104, 70, 90)
+        elif snowy:
+            top, bot = (72, 68, 120), (232, 142, 124)
+    elif stormy:
+        top, bot = (55, 65, 85), (95, 105, 125)
+    elif snowy:
+        top, bot = (175, 195, 220), (225, 230, 240)
+    elif cloudy:
+        top, bot = (140, 155, 175), (200, 205, 215)
+    else:
+        top, bot = (90, 165, 240), (185, 220, 245)
+    vgrad(c, 0, 63, 0, 21, top, bot)
+
+
+def draw_phase_land(c, phase, condition, f):
+    snowy = condition == COND_SNOW
+    wet = condition in (COND_RAIN, COND_DRIZZLE, COND_STORM)
+
+    if phase == PHASE_NIGHT:
+        for x in range(W):
+            h = 21 + (
+                (int(2 * math.sin(x * 0.5)) + int(3 * math.sin(x * 0.13))) // 2
+            )
+            for y in range(h, 23):
+                px(c, x, y, (10, 20, 25))
+            for y in range(23, H):
+                t = (y - 23) / 8
+                px(c, x, y, lerp((25, 35, 55), (10, 15, 30), t))
+        draw_e7(c, f, 34, 10)
+        return
+
+    if snowy:
+        for x in range(W):
+            ground = int(22 + 1.5 * math.sin(x * 0.20 + 0.5))
+            for y in range(ground, H):
+                shade = (240, 245, 252) if y == ground else (220, 228, 240)
+                if phase == PHASE_SUNRISE:
+                    shade = lerp(shade, (255, 200, 172), 0.18)
+                elif phase == PHASE_SUNSET:
+                    shade = lerp(shade, (235, 165, 170), 0.22)
+                px(c, x, y, shade)
+        draw_cmh(c, f)
+        return
+
+    for x in range(W):
+        hy = int(22 + 1.5 * math.sin(x * 0.16))
+        far = (95, 130, 90) if wet else (110, 175, 90)
+        near = (35, 65, 60) if wet else (70, 145, 55)
+        if phase == PHASE_SUNRISE:
+            far = lerp(far, (180, 130, 85), 0.22)
+            near = lerp(near, (120, 85, 55), 0.16)
+        elif phase == PHASE_SUNSET:
+            far = lerp(far, (170, 100, 85), 0.28)
+            near = lerp(near, (95, 60, 70), 0.22)
+        for y in range(hy, 25):
+            px(c, x, y, far)
+        for y in range(25, H):
+            px(c, x, y, near)
+
+    if wet:
+        for puddle_x in (10, 32, 50):
+            for dx in range(-3, 4):
+                px(c, puddle_x + dx, 29, (75, 110, 130))
+            ripple = (f // 4) % 6
+            if ripple < 3:
+                px(c, puddle_x - 2 + ripple, 28, (130, 170, 200))
+                px(c, puddle_x + 2 - ripple, 28, (130, 170, 200))
+    draw_cmh(c, f)
+
+
+def draw_phase_sun(c, phase, f):
+    if phase == PHASE_NIGHT:
+        return
+    if phase == PHASE_SUNRISE:
+        sx, sy = 34, 23
+        core = (255, 198, 92)
+    elif phase == PHASE_SUNSET:
+        sx, sy = 50, 24
+        core = (255, 150, 72)
+    else:
+        sx, sy = 52, 8
+        core = (255, 200, 60)
+
+    if phase in (PHASE_SUNRISE, PHASE_SUNSET):
+        disc(c, sx, sy, 4, core)
+        disc(c, sx, sy, 3, (255, 230, 110))
+        return
+
+    rot = (f * 3) % 360
+    for k in range(8):
+        ang = math.radians(rot + k * 45)
+        for d in (5, 6, 7):
+            px(c, int(sx + d * math.cos(ang)), int(sy + d * math.sin(ang)), core)
+    disc(c, sx, sy, 4, core)
+    disc(c, sx, sy, 3, (255, 230, 110))
+    px(c, sx - 1, sy - 1, (255, 255, 220))
+
+
+def draw_phase_clouds(c, phase, condition, clouds, f):
+    stormy = condition in (COND_RAIN, COND_DRIZZLE, COND_STORM)
+    if clouds == CLOUD_NONE and not stormy and condition != COND_CLOUDY:
+        return
+
+    if phase == PHASE_NIGHT:
+        light, dark = (75, 82, 110), (42, 48, 74)
+    elif condition == COND_STORM or clouds == CLOUD_OVERCAST:
+        light, dark = (95, 95, 120), (48, 52, 76)
+    elif phase == PHASE_SUNRISE:
+        light, dark = (228, 180, 168), (132, 100, 122)
+    elif phase == PHASE_SUNSET:
+        light, dark = (226, 142, 148), (104, 80, 130)
+    else:
+        light, dark = (225, 230, 238), (150, 160, 175)
+
+    cloud_centers = (12, 48) if clouds == CLOUD_PARTIAL and not stormy else (8, 24, 40, 56)
+    if clouds == CLOUD_OVERCAST and not stormy:
+        cloud_centers = (4, 16, 28, 40, 52, 62)
+
+    for cx in cloud_centers:
+        offset = int(math.sin((f + cx * 4) * 0.05) * 1)
+        disc(c, cx, 4 + offset, 3, dark)
+        disc(c, cx + 4, 3 + offset, 2, dark)
+        disc(c, cx - 3, 5 + offset, 2, light)
+
+
+def draw_phase_night_details(c, f):
+    random.seed(7)
+    stars = [
+        (random.randint(0, 63), random.randint(0, 18), random.randint(0, 99))
+        for _ in range(40)
+    ]
+    for sx, sy, phase in stars:
+        b = 140 + int(80 * math.sin((f + phase) * 0.12))
+        b = max(60, min(255, b))
+        px(c, sx, sy, (b, b, max(120, b - 30)))
+    disc(c, 16, 8, 4, (240, 235, 200))
+    disc(c, 18, 7, 4, (5, 9, 32))
+
+
+def draw_live_rain(c, f, density):
+    random.seed(0)
+    for _ in range(density):
+        x0 = random.randint(0, 63)
+        y0 = random.randint(0, 28)
+        length = random.choice((1, 2, 3))
+        y = (y0 + f) % 28
+        for k in range(length):
+            yy = y + k
+            if yy < 24:
+                px(c, x0 - (k // 2), yy, (150, 205, 245))
+
+
+def draw_live_snow(c, f):
+    random.seed(2)
+    flakes = [
+        (random.randint(0, 63), random.randint(0, 21), random.uniform(0.15, 0.55))
+        for _ in range(30)
+    ]
+    for fx, fy, speed in flakes:
+        y = int(fy + f * speed) % 22
+        x = int(fx + 2 * math.sin((f * speed + fy) * 0.15))
+        px(c, x, y, (245, 250, 255))
+
+
+def draw_condition_scene(c, f, condition, phase, clouds):
+    draw_phase_sky(c, phase, condition, clouds)
+    if (
+        (condition == COND_CLEAR or phase in (PHASE_SUNRISE, PHASE_SUNSET))
+        and clouds != CLOUD_OVERCAST
+    ):
+        draw_phase_sun(c, phase, f)
+    draw_phase_land(c, phase, condition, f)
+    draw_phase_clouds(c, phase, condition, clouds, f)
+
+    if condition == COND_CLEAR:
+        if phase in (PHASE_DAY, PHASE_SUNRISE, PHASE_SUNSET):
+            draw_geese_v(c, f)
+    elif condition == COND_DRIZZLE:
+        draw_live_rain(c, f, 20)
+    elif condition == COND_RAIN:
+        draw_live_rain(c, f, 45)
+    elif condition == COND_STORM:
+        if (f // 7) % 23 == 0:
+            rect(c, 0, 0, 63, 21, (220, 220, 255))
+        draw_live_rain(c, f, 55)
+    elif condition == COND_SNOW:
+        draw_live_snow(c, f)
+
+    if phase == PHASE_NIGHT:
+        draw_phase_night_details(c, f)
+
+
 # ─── live weather fetch (Open-Meteo) ───────────────────────────────────────
 
 LAT, LON = 43.4643, -80.5204  # Waterloo, Ontario
@@ -415,52 +644,103 @@ WEATHER_URL = (
     "https://api.open-meteo.com/v1/forecast"
     "?latitude={lat}&longitude={lon}"
     "&current=temperature_2m,weather_code,is_day"
+    "&daily=sunrise,sunset"
+    "&forecast_days=1"
     "&timezone=auto"
 ).format(lat=LAT, lon=LON)
 
 REFRESH_SECONDS = 600  # pull new conditions every 10 minutes
 HTTP_TIMEOUT = 10
 
-# WMO weather codes → (short label, scene function).
-# Night override is applied separately for clear/partly-cloudy codes.
-def classify(weather_code, is_day):
+def parse_open_meteo_time(value):
+    if value is None:
+        return None
+    if isinstance(value, dt.datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return dt.datetime.fromisoformat(value)
+
+
+def classify_phase(current_time, sunrise, sunset, is_day):
+    now = parse_open_meteo_time(current_time)
+    sunrise_time = parse_open_meteo_time(sunrise)
+    sunset_time = parse_open_meteo_time(sunset)
+
+    if now is None:
+        now = dt.datetime.now()
+    if any(
+        value is not None and (value.tzinfo is None) != (now.tzinfo is None)
+        for value in (sunrise_time, sunset_time)
+    ):
+        now = now.replace(tzinfo=None)
+        if sunrise_time is not None:
+            sunrise_time = sunrise_time.replace(tzinfo=None)
+        if sunset_time is not None:
+            sunset_time = sunset_time.replace(tzinfo=None)
+    if sunrise_time is not None and abs(now - sunrise_time) <= TWILIGHT_WINDOW:
+        return PHASE_SUNRISE
+    if sunset_time is not None and abs(now - sunset_time) <= TWILIGHT_WINDOW:
+        return PHASE_SUNSET
+    return PHASE_DAY if is_day else PHASE_NIGHT
+
+
+# WMO weather codes → (short label, condition effect).
+def classify_condition(weather_code):
     c = weather_code
     if c in (0,):
-        return ("CLR", draw_sunny if is_day else draw_night)
+        return ("CLR", COND_CLEAR, CLOUD_NONE)
     if c in (1, 2):
-        return ("PCLD", draw_sunny if is_day else draw_night)
+        return ("PCLD", COND_CLEAR, CLOUD_PARTIAL)
     if c in (3,):
-        return ("CLDY", draw_cloudy)
+        return ("CLD", COND_CLEAR, CLOUD_OVERCAST)
     if c in (45, 48):
-        return ("FOG", draw_cloudy)
+        return ("FOG", COND_CLOUDY, CLOUD_OVERCAST)
     if c in (51, 53, 55, 56, 57):
-        return ("DRZL", draw_rainy)
+        return ("DRZL", COND_DRIZZLE, CLOUD_OVERCAST)
     if c in (61, 63, 65, 66, 67, 80, 81, 82):
-        return ("RAIN", draw_rainy)
+        return ("RAIN", COND_RAIN, CLOUD_OVERCAST)
     if c in (71, 73, 75, 77, 85, 86):
-        return ("SNOW", draw_snowy)
+        return ("SNOW", COND_SNOW, CLOUD_OVERCAST)
     if c in (95, 96, 99):
-        return ("STRM", draw_rainy)
-    return ("?", draw_cloudy)
+        return ("STRM", COND_STORM, CLOUD_OVERCAST)
+    return ("?", COND_CLOUDY, CLOUD_OVERCAST)
 
 
 def fetch_weather():
-    """Return (temp_c:int, weather_code:int, is_day:bool) or None on failure."""
+    """Return a current weather dict or None on failure."""
     try:
         with urllib.request.urlopen(WEATHER_URL, timeout=HTTP_TIMEOUT) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         cur = data["current"]
-        return (
-            int(round(cur["temperature_2m"])),
-            int(cur["weather_code"]),
-            bool(cur["is_day"]),
-        )
-    except (urllib.error.URLError, ValueError, KeyError, OSError):
+        daily = data.get("daily", {})
+        return {
+            "temp_c": int(round(cur["temperature_2m"])),
+            "weather_code": int(cur["weather_code"]),
+            "is_day": bool(cur["is_day"]),
+            "current_time": cur.get("time"),
+            "sunrise": daily.get("sunrise", [None])[0],
+            "sunset": daily.get("sunset", [None])[0],
+        }
+    except (urllib.error.URLError, ValueError, KeyError, TypeError, OSError):
         return None
 
 
 def make_label(temp_c, cond):
     return "{:d}\xb0C {}".format(temp_c, cond)
+
+
+def make_render_state(reading):
+    cond_label, condition, clouds = classify_condition(reading["weather_code"])
+    phase = classify_phase(
+        reading.get("current_time"),
+        reading.get("sunrise"),
+        reading.get("sunset"),
+        reading.get("is_day"),
+    )
+    return make_label(reading["temp_c"], cond_label), condition, phase, clouds
 
 
 # ─── main loop ─────────────────────────────────────────────────────────────
@@ -469,18 +749,18 @@ current = fetch_weather()
 if current is None:
     # No network yet — fall back to a neutral overcast scene until next try.
     label = "-- NET"
-    draw_fn = draw_cloudy
+    condition = COND_CLOUDY
+    phase = PHASE_DAY
+    clouds = CLOUD_OVERCAST
 else:
-    temp_c, code, is_day = current
-    cond, draw_fn = classify(code, is_day)
-    label = make_label(temp_c, cond)
+    label, condition, phase, clouds = make_render_state(current)
 
 last_fetch = time.time()
 frame = 0
 
 while True:
     canvas.Clear()
-    draw_fn(canvas, frame)
+    draw_condition_scene(canvas, frame, condition, phase, clouds)
     draw_label(canvas, label)
     canvas = matrix.SwapOnVSync(canvas)
 
@@ -489,9 +769,7 @@ while True:
         result = fetch_weather()
         last_fetch = time.time()
         if result is not None:
-            temp_c, code, is_day = result
-            cond, draw_fn = classify(code, is_day)
-            label = make_label(temp_c, cond)
+            label, condition, phase, clouds = make_render_state(result)
         # On failure, keep showing the last good reading.
 
     time.sleep(0.05)
