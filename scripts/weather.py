@@ -27,10 +27,10 @@ ROWS = 32
 COLS = 64
 CHAIN_LENGTH = 1
 PARALLEL = 1
-GPIO_SLOWDOWN = 4
+GPIO_SLOWDOWN = 2
 BRIGHTNESS = 80
 HARDWARE_MAPPING = "regular"
-PWM_BITS = 11
+PWM_BITS = 8
 
 W = COLS * CHAIN_LENGTH
 H = ROWS * PARALLEL
@@ -4122,11 +4122,15 @@ def main():
             current
         )
 
-    last_fetch = time.time()
-    frame = 0
+    animation_start = time.monotonic()
+    next_frame_time = animation_start
+    last_fetch = animation_start
 
     try:
         while True:
+            now = time.monotonic()
+            frame = int((now - animation_start) / FRAME_DELAY)
+
             canvas.Clear()
             draw_condition_scene(
                 canvas,
@@ -4140,17 +4144,22 @@ def main():
             )
             canvas = matrix.SwapOnVSync(canvas)
 
-            frame += 1
-            if time.time() - last_fetch >= REFRESH_SECONDS:
+            now = time.monotonic()
+            if now - last_fetch >= REFRESH_SECONDS:
                 result = fetch_weather()
-                last_fetch = time.time()
+                last_fetch = time.monotonic()
                 if result is not None:
                     label, condition, phase, clouds, rain_style, night_lighting = (
                         make_render_state(result)
                     )
                 # On failure, keep showing the last good reading.
 
-            time.sleep(FRAME_DELAY)
+            next_frame_time += FRAME_DELAY
+            sleep_for = next_frame_time - time.monotonic()
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+            else:
+                next_frame_time = time.monotonic()
     except KeyboardInterrupt:
         matrix.Clear()
 
