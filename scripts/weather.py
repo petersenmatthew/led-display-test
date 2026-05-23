@@ -3752,6 +3752,8 @@ def foreground_tint_for(phase, condition):
 
 def train_stop_tint_for(phase, condition, clouds):
     tint = foreground_tint_for(phase, condition)
+    if phase == PHASE_NIGHT:
+        return lambda col: NIGHT_SKY if is_source_sky_color(col) else tint(col)
     if phase == PHASE_DAY and clouds == CLOUD_OVERCAST and condition == COND_CLEAR:
         return lambda col: CLOUDY_DAY_SKY if is_source_sky_color(col) else tint(col)
     return tint
