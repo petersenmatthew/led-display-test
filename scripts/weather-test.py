@@ -2616,9 +2616,13 @@ def blend_color(col, target, amount):
 
 
 NIGHT_SKY = (5, 9, 32)
-NIGHT_STAR_COUNT = 9
+NIGHT_STAR_EVENT_SLOTS = 4
 NIGHT_STAR_SEED = 1807
-NIGHT_STAR_FLASH_FRAMES = 18
+NIGHT_STAR_FLASH_FRAMES = 3
+NIGHT_STAR_MIN_CYCLE_FRAMES = 160
+NIGHT_STAR_MAX_CYCLE_FRAMES = 320
+NIGHT_STAR_FLASH_CHANCE = 0.55
+NIGHT_STAR_MAX_Y = (H // 2) - 1
 
 
 def weather_label_bounds(text):
@@ -2628,32 +2632,49 @@ def weather_label_bounds(text):
     return x0, 0, W - 1, 7, pad
 
 
-def generate_night_stars():
-    rng = random.Random(NIGHT_STAR_SEED)
+def random_night_star_position(rng, occupied=()):
     label_region = weather_label_bounds("12C NITE")[:4]
     avoid_regions = SKY_EXCLUSION_REGIONS + (label_region,)
-    stars = []
 
-    for _ in range(500):
-        if len(stars) >= NIGHT_STAR_COUNT:
-            break
+    for _ in range(80):
         x = rng.randint(1, W - 2)
-        y = rng.randint(1, 18)
+        y = rng.randint(1, NIGHT_STAR_MAX_Y)
         if in_any_region(x, y, avoid_regions):
             continue
         if any(
-            abs(x - sx) + abs(y - sy) < 7
-            for sx, sy, _cycle, _phase in stars
+            abs(x - sx) + abs(y - sy) < 5
+            for sx, sy in occupied
         ):
             continue
-        cycle = rng.randint(96, 160)
-        phase = rng.randint(0, cycle - 1)
-        stars.append((x, y, cycle, phase))
+        return x, y
 
-    return tuple(stars)
+    return None
 
 
-NIGHT_STARS = generate_night_stars()
+def night_star_flash(slot, frame, occupied=()):
+    slot_seed = NIGHT_STAR_SEED + slot * 1009
+    slot_rng = random.Random(slot_seed)
+    cycle = slot_rng.randint(NIGHT_STAR_MIN_CYCLE_FRAMES, NIGHT_STAR_MAX_CYCLE_FRAMES)
+    phase = slot_rng.randint(0, cycle - 1)
+    shifted_frame = frame + phase
+    age = shifted_frame % cycle
+    if age >= NIGHT_STAR_FLASH_FRAMES:
+        return None
+
+    cycle_index = shifted_frame // cycle
+    event_rng = random.Random(slot_seed + cycle_index * 9176)
+    if event_rng.random() > NIGHT_STAR_FLASH_CHANCE:
+        return None
+
+    pos = random_night_star_position(event_rng, occupied)
+    if pos is None:
+        return None
+
+    crest = 1.0 - abs(age - (NIGHT_STAR_FLASH_FRAMES - 1) / 2) / (
+        (NIGHT_STAR_FLASH_FRAMES + 1) / 2
+    )
+    b = 110 + int(135 * crest)
+    return pos[0], pos[1], b
 
 
 def building_night(col):
@@ -2908,15 +2929,14 @@ def draw_snow(c, frame):
 
 
 def draw_stars(c, frame):
-    for sx, sy, cycle, phase in NIGHT_STARS:
-        age = (frame + phase) % cycle
-        b = 58
-        if age < NIGHT_STAR_FLASH_FRAMES:
-            crest = 1.0 - abs(age - NIGHT_STAR_FLASH_FRAMES / 2) / (
-                NIGHT_STAR_FLASH_FRAMES / 2
-            )
-            b += int(170 * crest)
+    occupied = []
+    for slot in range(NIGHT_STAR_EVENT_SLOTS):
+        flash = night_star_flash(slot, frame, occupied)
+        if flash is None:
+            continue
+        sx, sy, b = flash
         px(c, sx, sy, (b, b, min(255, b + 24)))
+        occupied.append((sx, sy))
 
 
 def draw_lamp_glow(c, frame):
