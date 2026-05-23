@@ -2618,7 +2618,7 @@ def blend_color(col, target, amount):
 NIGHT_SKY = (5, 9, 32)
 NIGHT_STAR_EVENT_SLOTS = 4
 NIGHT_STAR_SEED = 1807
-NIGHT_STAR_FLASH_FRAMES = 5
+NIGHT_STAR_FLASH_FRAMES = 9
 NIGHT_STAR_MIN_CYCLE_FRAMES = 140
 NIGHT_STAR_MAX_CYCLE_FRAMES = 280
 NIGHT_STAR_FLASH_CHANCE = 0.65
@@ -2673,10 +2673,8 @@ def night_star_flash(slot, frame, occupied=()):
     if pos is None:
         return None
 
-    crest = 1.0 - abs(age - (NIGHT_STAR_FLASH_FRAMES - 1) / 2) / (
-        (NIGHT_STAR_FLASH_FRAMES + 1) / 2
-    )
-    b = 110 + int(135 * crest)
+    crest = math.sin(math.pi * (age + 0.5) / NIGHT_STAR_FLASH_FRAMES) ** 2
+    b = 10 + int(235 * crest)
     return pos[0], pos[1], b
 
 
