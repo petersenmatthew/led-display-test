@@ -165,7 +165,7 @@ MAIN_BUILDING_REGIONS = (
 )
 
 RIGHT_FOREGROUND_REGIONS = (
-    (43, 20, 63, 21),
+    (39, 20, 63, 21),
 )
 
 FOREGROUND_REGIONS = (
@@ -3102,16 +3102,66 @@ def draw_goose(c, x, y, flap):
     px(c, x + 2, y + 1, head)
 
 
-def draw_geese_pack(c, frame, base_x, base_y, speed, spread=3):
-    leader_x = int((base_x + frame * speed) % 88) - 12
-    flock = ((0, 0), (-spread, -1), (-spread, 1), (-spread * 2, -2), (-spread * 2, 2), (-spread * 3, -3))
-    for i, (dx, dy) in enumerate(flock):
-        draw_goose(c, leader_x + dx, base_y + dy, ((frame + i * 4) // 5) % 2)
+GEESE_SEED = 6283
+GEESE_MIN_BIRDS = 2
+GEESE_LANES = (
+    (13, 0.38, 3, 75.0, 0.72, 0),
+    (17, 0.30, 2, 115.0, 0.62, 36),
+)
+
+
+def geese_flock_offsets(spread):
+    return (
+        (0, 0),
+        (-spread, -1),
+        (-spread, 1),
+        (-spread * 2, -2),
+        (-spread * 2, 2),
+        (-spread * 3, -3),
+    )
+
+
+def geese_flight_state(
+    frame, lane_index, base_y, speed, spread, cycle_seconds, chance, phase_offset
+):
+    cycle_frames = max(1, int(round(cycle_seconds / FRAME_DELAY)))
+    cycle = (frame + phase_offset) // cycle_frames
+    t = (frame + phase_offset) % cycle_frames
+    rng = random.Random(GEESE_SEED + lane_index * 1009 + cycle)
+    if rng.random() > chance:
+        return None
+
+    speed *= rng.uniform(0.88, 1.08)
+    flight_frames = int(math.ceil((W + 16 + spread * 3) / speed))
+    start = rng.randint(0, max(0, cycle_frames - flight_frames))
+    local_frame = t - start
+    if local_frame < 0 or local_frame >= flight_frames:
+        return None
+
+    bird_count = rng.randint(GEESE_MIN_BIRDS, len(geese_flock_offsets(spread)))
+    y = base_y + rng.choice((-1, 0, 0, 1))
+    leader_x = int(-12 + local_frame * speed)
+    return leader_x, y, bird_count
+
+
+def draw_geese_pack(
+    c, frame, lane_index, base_y, speed, spread, cycle_seconds, chance, phase_offset
+):
+    state = geese_flight_state(
+        frame, lane_index, base_y, speed, spread, cycle_seconds, chance, phase_offset
+    )
+    if state is None:
+        return
+
+    leader_x, y, bird_count = state
+    flock = geese_flock_offsets(spread)
+    for i, (dx, dy) in enumerate(flock[:bird_count]):
+        draw_goose(c, leader_x + dx, y + dy, ((frame + i * 4) // 5) % 2)
 
 
 def draw_geese_packs(c, frame):
-    draw_geese_pack(c, frame, 4, 13, 0.38)
-    draw_geese_pack(c, frame + 36, 24, 17, 0.30, 2)
+    for lane_index, lane in enumerate(GEESE_LANES):
+        draw_geese_pack(c, frame, lane_index, *lane)
 
 
 def draw_rain(c, frame):
