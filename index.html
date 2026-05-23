@@ -389,7 +389,12 @@
   const editor   = document.getElementById("editor");
   const samples  = document.getElementById("samples");
 
+  const APP_VERSION = "weather-shared-renderer-v2";
   let worker = null;
+  const scriptDependencies = {
+    weather: ["weather_scene"],
+    "weather-test": ["weather_scene"],
+  };
 
   function setStatus(s) { statusEl.textContent = s; }
   function appendConsole(s, kind) {
@@ -404,7 +409,7 @@
 
   function ensureWorker() {
     if (worker) return worker;
-    worker = new Worker("worker.js");
+    worker = new Worker(`worker.js?v=${APP_VERSION}`);
     worker.onmessage = (e) => {
       const msg = e.data;
       switch (msg.type) {
@@ -435,15 +440,33 @@
     if (worker) { worker.terminate(); worker = null; }
   }
 
-  runBtn.addEventListener("click", () => {
+  async function loadDependencyFiles(name, code) {
+    const deps = new Set(scriptDependencies[name] || []);
+    if (/\b(?:from\s+weather_scene\s+import|import\s+weather_scene\b)/.test(code)) {
+      deps.add("weather_scene");
+    }
+    const files = {};
+    await Promise.all([...deps].map(async (dep) => {
+      files[`${dep}.py`] = await loadScript(dep);
+    }));
+    return files;
+  }
+
+  runBtn.addEventListener("click", async () => {
     killWorker();
     clearConsole();
     clearFrame();
     setStatus("starting…");
-    const w = ensureWorker();
-    w.postMessage({ type: "run", code: editor.value });
-    runBtn.disabled = true;
-    stopBtn.disabled = false;
+    try {
+      const files = await loadDependencyFiles(samples.value, editor.value);
+      const w = ensureWorker();
+      w.postMessage({ type: "run", code: editor.value, files });
+      runBtn.disabled = true;
+      stopBtn.disabled = false;
+    } catch (e) {
+      appendConsole(`${e.message}\n`, "stderr");
+      setStatus("error");
+    }
   });
 
   stopBtn.addEventListener("click", () => {
@@ -455,7 +478,7 @@
 
   // ─── Sample scripts ─────────────────────────────────────────────────────────
   async function loadScript(name) {
-    const res = await fetch(`scripts/${name}.py`);
+    const res = await fetch(`scripts/${name}.py?v=${APP_VERSION}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`failed to load scripts/${name}.py: ${res.status}`);
     return await res.text();
   }

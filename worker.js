@@ -275,6 +275,16 @@ onmessage = async (e) => {
     if (!pyodide) return;
     postMessage({ type: "status", s: "running" });
     try {
+      if (msg.files) {
+        for (const [path, contents] of Object.entries(msg.files)) {
+          const parts = path.split("/").filter(Boolean);
+          for (let i = 1; i < parts.length; i++) {
+            const dir = "/" + parts.slice(0, i).join("/");
+            try { pyodide.FS.mkdir(dir); } catch (_e) {}
+          }
+          pyodide.FS.writeFile(path, contents);
+        }
+      }
       await pyodide.runPythonAsync(msg.code);
       postMessage({ type: "status", s: "finished" });
     } catch (err) {
