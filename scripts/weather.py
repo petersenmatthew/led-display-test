@@ -2637,6 +2637,16 @@ TRAIN_ENTER_END_FRAME = int(round(2.0 / FRAME_DELAY))
 TRAIN_PARK_END_FRAME = int(round(12.0 / FRAME_DELAY))
 TRAIN_EXIT_END_FRAME = int(round(16.0 / FRAME_DELAY))
 
+
+def ease_in_cubic(p):
+    p = max(0.0, min(1.0, p))
+    return p * p * p
+
+
+def ease_out_cubic(p):
+    p = max(0.0, min(1.0, p))
+    return 1.0 - (1.0 - p) ** 3
+
 # For each pixel inside TRAIN_BBOX where the source LANDSCAPE_SPANS differs
 # from assets/train_stop.png, this tuple holds (dx, y, train_color, stop_color)
 # — dx is relative to TRAIN_HOME_X so the animation only has to add an x
@@ -2874,7 +2884,7 @@ def train_animation_state(frame):
         # Slide in from off-screen right (x_offset = W - TRAIN_HOME_X) to home (0).
         start = W - TRAIN_HOME_X
         p = t / TRAIN_ENTER_END_FRAME
-        return int(round(start * (1.0 - p))), True
+        return int(round(start * (1.0 - ease_out_cubic(p)))), True
     if t < TRAIN_PARK_END_FRAME:
         return 0, True
     if t < TRAIN_EXIT_END_FRAME:
@@ -2882,7 +2892,7 @@ def train_animation_state(frame):
         end = -(TRAIN_HOME_X + TRAIN_WIDTH)
         span = TRAIN_EXIT_END_FRAME - TRAIN_PARK_END_FRAME
         p = (t - TRAIN_PARK_END_FRAME) / span
-        return int(round(end * p)), True
+        return int(round(end * ease_in_cubic(p))), True
     return 0, False
 
 
