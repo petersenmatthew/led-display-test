@@ -3,7 +3,7 @@
 
 Pulls current conditions from Open-Meteo (no API key required) for
 lat=43.4643, lon=-80.5204, picks the matching scene, and shows the live
-temperature + condition label in the top-right corner.
+temperature in the top-right corner.
 
 The landscape art and weather effects are kept identical to
 scripts/weather-test.py, which cycles through every scene for offline
@@ -2909,11 +2909,16 @@ NIGHT_STAR_SEED = 1807
 NIGHT_STAR_FLASH_FRAMES = 18
 
 
+def temperature_label_text(text):
+    return str(text).split()[0] if text else ""
+
+
 def weather_label_bounds(text):
+    text = temperature_label_text(text)
     text_w = len(text) * 4
-    pad = 1
+    pad = 0
     x0 = max(0, W - text_w - pad * 2)
-    return x0, 0, W - 1, 7, pad
+    return x0, 0, W - 1, 6, pad
 
 
 def generate_night_stars():
@@ -3809,10 +3814,11 @@ def draw_condition_scene(
 
 
 def draw_weather_label(c, font, text):
+    text = temperature_label_text(text)
     x0, _y0, _x1, _y1, pad = weather_label_bounds(text)
-    rect(c, x0, 0, W - 1, 7, (12, 18, 27))
+    rect(c, x0, 0, W - 1, 6, (12, 18, 27))
     hline(c, x0, 0, W - x0, (39, 52, 70))
-    graphics.DrawText(c, font, x0 + pad, 6, graphics.Color(255, 235, 150), text)
+    graphics.DrawText(c, font, x0 + pad, 5, graphics.Color(255, 235, 150), text)
 
 
 def draw_sunny(c, frame):
@@ -4061,8 +4067,8 @@ def fetch_weather():
         return None
 
 
-def make_label(temp_c, cond):
-    return "{:d}\xb0C {}".format(temp_c, cond)
+def make_label(temp_c, _cond):
+    return "{:d}\xb0C".format(temp_c)
 
 
 def make_render_state(reading):
@@ -4105,7 +4111,7 @@ def main():
     current = fetch_weather()
     if current is None:
         # No network yet — fall back to a neutral overcast scene until next try.
-        label = "-- NET"
+        label = "--"
         condition = COND_CLOUDY
         phase = PHASE_DAY
         clouds = CLOUD_OVERCAST
