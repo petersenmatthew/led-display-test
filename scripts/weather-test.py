@@ -2623,6 +2623,9 @@ NIGHT_STAR_MIN_CYCLE_FRAMES = 140
 NIGHT_STAR_MAX_CYCLE_FRAMES = 280
 NIGHT_STAR_FLASH_CHANCE = 0.65
 NIGHT_STAR_MAX_Y = (H // 2) - 1
+MOON_X = 10
+MOON_Y = 4
+MOON_RADIUS = 3
 
 
 def weather_label_bounds(text):
@@ -2675,6 +2678,14 @@ def night_star_flash(slot, frame, occupied=()):
     )
     b = 110 + int(135 * crest)
     return pos[0], pos[1], b
+
+
+def draw_moon(c):
+    sky_disc(c, MOON_X, MOON_Y, MOON_RADIUS, (232, 232, 205))
+    sky_disc(c, MOON_X + 2, MOON_Y - 1, 2, NIGHT_SKY)
+    px_open_sky(c, MOON_X - 2, MOON_Y - 1, (255, 252, 220))
+    px_open_sky(c, MOON_X - 1, MOON_Y + 1, (255, 252, 220))
+    px_open_sky(c, MOON_X + 1, MOON_Y + 2, (205, 205, 184))
 
 
 def building_night(col):
@@ -3239,6 +3250,7 @@ def draw_low_sun(c, frame, phase):
 
 def draw_night_base(c, frame, night_lighting=None):
     draw_flat_sky(c, NIGHT_SKY)
+    draw_moon(c)
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_night)
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_night)
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, building_night)
