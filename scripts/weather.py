@@ -198,10 +198,8 @@ CMH_NIGHT_WINDOWS = (
     (25, 18, 26, 18),
     (31, 18, 31, 18),
     (25, 21, 26, 21),
-    (3, 17, 4, 17),
     (8, 17, 9, 17),
     (13, 17, 13, 17),
-    (3, 19, 4, 19),
     (8, 19, 9, 19),
     (13, 19, 13, 19),
 )
@@ -3291,7 +3289,10 @@ def draw_window_lights(c, frame, night_lighting=None):
             clamp(124 + pulse),
             clamp(48 + pulse // 2),
         )
-        rect(c, x0, y0, x1, y1, col)
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
+                if not is_source_sky_color(source_color(x, y)):
+                    px(c, x, y, col)
 
 
 PHASE_DAY = "day"
