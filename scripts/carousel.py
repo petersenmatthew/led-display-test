@@ -3,7 +3,11 @@ import time
 from datetime import datetime
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
-FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
+# In Pyodide (browser), fonts are at "./fonts/"; on Pi, use relative path
+try:
+    FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
+except NameError:
+    FONT_DIR = "./fonts"
 
 # Load fonts before creating RGBMatrix — the matrix constructor drops root
 # privileges to user "daemon", which can't read files inside /home/pi.
@@ -131,7 +135,10 @@ def draw_slot(canvas, cls, label, label_idx, x_offset):
 
 def draw_dots(canvas, current, y):
     dot_spacing = 8
-    start_x = 32 - (3 * dot_spacing) // 2
+    # Total width: 3 dots of 2px each + 2 gaps of (dot_spacing - 2px)
+    # = 6px + 2*(dot_spacing - 2) = 6 + 2*6 = 18px total
+    # Center at 32, so start at 32 - 18/2 = 32 - 9 = 23
+    start_x = 32 - ((3 * 2) + (2 * (dot_spacing - 2))) // 2
     for i in range(3):
         x = start_x + i * dot_spacing
         if i == current:

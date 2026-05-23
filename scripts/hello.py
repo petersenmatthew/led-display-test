@@ -2,7 +2,11 @@ import os
 import time
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
-FONT_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts"))
+# In Pyodide (browser), fonts are at "./fonts/"; on Pi, use relative path
+try:
+    FONT_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts"))
+except NameError:
+    FONT_DIR = "./fonts"
 
 # Load font before creating RGBMatrix — the matrix constructor drops root
 # privileges to user "daemon", which can't read files inside /home/pi.
