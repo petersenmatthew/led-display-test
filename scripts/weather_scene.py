@@ -3791,13 +3791,35 @@ def foreground_tint_for(phase, condition):
     return lambda col: col
 
 
+def train_stop_sky_pixel_for(phase, condition, clouds):
+    """Tint exposed source-sky pixels in the ION stop backdrop.
+
+    Keep the moving train sprite itself in its original palette; only the
+    scenery repainted behind it should match the active sky.
+    """
+    if phase == PHASE_NIGHT:
+        return NIGHT_SKY
+    if condition in (COND_RAIN, COND_STORM):
+        return storm_sky_for_phase(phase)
+    if phase == PHASE_SUNRISE:
+        return (139, 76, 112)
+    if phase == PHASE_SUNSET:
+        return (105, 64, 116)
+    if phase == PHASE_DAY and clouds == CLOUD_OVERCAST and condition == COND_CLEAR:
+        return CLOUDY_DAY_SKY
+    return None
+
+
 def train_stop_tint_for(phase, condition, clouds):
     tint = foreground_tint_for(phase, condition)
-    if phase == PHASE_NIGHT:
-        return lambda col: NIGHT_SKY if is_source_sky_color(col) else tint(col)
-    if phase == PHASE_DAY and clouds == CLOUD_OVERCAST and condition == COND_CLEAR:
-        return lambda col: CLOUDY_DAY_SKY if is_source_sky_color(col) else tint(col)
-    return tint
+
+    def transform(col):
+        sky_col = train_stop_sky_pixel_for(phase, condition, clouds)
+        if sky_col is not None and is_source_sky_color(col):
+            return sky_col
+        return tint(col)
+
+    return transform
 
 
 def draw_train_animation(c, frame, phase, condition, clouds):
@@ -4017,5 +4039,3 @@ def active_night_windows(current_time=None, sunset=None, sunrise=None):
         (*coords, (seed + index * NIGHT_WINDOW_PHASE_STEP) % 480)
         for index, coords in selected
     )
-
-
