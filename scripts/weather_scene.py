@@ -3403,7 +3403,7 @@ def draw_vertical_gradient(c, y0, y1, top, bot):
         hline(c, 0, y, W, blend_color(top, bot, (y - y0) / span))
 
 
-def draw_twilight_sky(c, phase, storm=False):
+def twilight_stops_for_phase(phase, storm=False):
     if phase == PHASE_SUNRISE:
         stops = (
             (0, (156, 88, 132)),
@@ -3425,7 +3425,23 @@ def draw_twilight_sky(c, phase, storm=False):
             (y, blend_color(col, (42, 46, 78), 0.45))
             for y, col in stops
         )
+    return stops
 
+
+def twilight_sky_color_at(phase, y, storm=False):
+    stops = twilight_stops_for_phase(phase, storm)
+    if y <= stops[0][0]:
+        return stops[0][1]
+    if y >= stops[-1][0]:
+        return stops[-1][1]
+    for (y0, top), (y1, bot) in zip(stops, stops[1:]):
+        if y0 <= y <= y1:
+            return blend_color(top, bot, (y - y0) / max(1, y1 - y0))
+    return stops[-1][1]
+
+
+def draw_twilight_sky(c, phase, storm=False):
+    stops = twilight_stops_for_phase(phase, storm)
     for (y0, top), (y1, bot) in zip(stops, stops[1:]):
         draw_vertical_gradient(c, y0, y1, top, bot)
 
@@ -3503,10 +3519,10 @@ def disc_raw(c, cx, cy, r, col):
 
 def draw_low_sun(c, frame, phase):
     if phase == PHASE_SUNRISE:
-        sx, sy = 34, 24
+        sx, sy = 37, 15
         core = (255, 198, 76)
     elif phase == PHASE_SUNSET:
-        sx, sy = 50, 25
+        sx, sy = 50, 15
         core = (255, 132, 66)
     else:
         return
@@ -3791,7 +3807,7 @@ def foreground_tint_for(phase, condition):
     return lambda col: col
 
 
-def train_stop_sky_pixel_for(phase, condition, clouds):
+def train_stop_sky_pixel_for(phase, condition, clouds, y=None):
     """Tint exposed source-sky pixels in the ION stop backdrop.
 
     Keep the moving train sprite itself in its original palette; only the
@@ -3799,12 +3815,14 @@ def train_stop_sky_pixel_for(phase, condition, clouds):
     """
     if phase == PHASE_NIGHT:
         return NIGHT_SKY
+    if phase in (PHASE_SUNRISE, PHASE_SUNSET):
+        return twilight_sky_color_at(
+            phase,
+            y if y is not None else 25,
+            storm=condition in (COND_RAIN, COND_STORM),
+        )
     if condition in (COND_RAIN, COND_STORM):
         return storm_sky_for_phase(phase)
-    if phase == PHASE_SUNRISE:
-        return (139, 76, 112)
-    if phase == PHASE_SUNSET:
-        return (105, 64, 116)
     if phase == PHASE_DAY and clouds == CLOUD_OVERCAST and condition == COND_CLEAR:
         return CLOUDY_DAY_SKY
     return None
@@ -3813,8 +3831,8 @@ def train_stop_sky_pixel_for(phase, condition, clouds):
 def train_stop_tint_for(phase, condition, clouds):
     tint = foreground_tint_for(phase, condition)
 
-    def transform(col):
-        sky_col = train_stop_sky_pixel_for(phase, condition, clouds)
+    def transform(col, y=None):
+        sky_col = train_stop_sky_pixel_for(phase, condition, clouds, y)
         if sky_col is not None and is_source_sky_color(col):
             return sky_col
         return tint(col)
@@ -3833,7 +3851,7 @@ def draw_train_animation(c, frame, phase, condition, clouds):
     for row_offset, row in enumerate(TRAIN_STOP_SPANS):
         y = TRAIN_BBOX_Y0 + row_offset
         for dx, length, stop_col in row:
-            hline(c, TRAIN_HOME_X + dx, y, length, stop_tint(stop_col))
+            hline(c, TRAIN_HOME_X + dx, y, length, stop_tint(stop_col, y))
 
     if visible:
         for dx, y, train_col, _stop_col in TRAIN_DIFF_ENTRIES:
