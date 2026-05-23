@@ -8,6 +8,7 @@ the same editable landscape layers, then add scene-specific effects.
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 import os
 import random
@@ -168,19 +169,38 @@ ION_TRAIN_GLAZING_REGIONS = (
     (47, 25, 63, 27),
 )
 
-NIGHT_WINDOW_LIGHTS = (
-    (19, 4, 19, 4, 0),
-    (22, 7, 22, 7, 31),
-    (19, 12, 19, 12, 67),
-    (22, 18, 22, 18, 103),
-    (25, 7, 26, 7, 151),
-    (25, 13, 26, 13, 197),
-    (25, 21, 26, 21, 239),
-    (31, 9, 31, 9, 283),
-    (31, 18, 31, 18, 331),
-    (8, 17, 9, 17, 379),
-    (13, 19, 13, 19, 421),
+CMH_NIGHT_WINDOWS = (
+    (19, 4, 19, 4),
+    (22, 4, 22, 4),
+    (25, 4, 26, 4),
+    (31, 5, 31, 5),
+    (19, 7, 19, 7),
+    (22, 7, 22, 7),
+    (25, 7, 26, 7),
+    (31, 9, 31, 9),
+    (19, 10, 19, 10),
+    (22, 10, 22, 10),
+    (25, 10, 26, 10),
+    (31, 12, 31, 12),
+    (19, 12, 19, 12),
+    (22, 13, 22, 13),
+    (25, 13, 26, 13),
+    (31, 15, 31, 15),
+    (19, 16, 19, 16),
+    (22, 18, 22, 18),
+    (25, 18, 26, 18),
+    (31, 18, 31, 18),
+    (25, 21, 26, 21),
+    (3, 17, 4, 17),
+    (8, 17, 9, 17),
+    (13, 17, 13, 17),
+    (3, 19, 4, 19),
+    (8, 19, 9, 19),
+    (13, 19, 13, 19),
 )
+
+NIGHT_WINDOW_SEED = 5167
+NIGHT_WINDOW_PHASE_STEP = 47
 
 SKY_EXCLUSION_REGIONS = (
     CLOUD_REGIONS
@@ -2822,16 +2842,59 @@ def draw_geese_packs(c, frame):
     draw_geese_pack(c, frame + 36, 24, 17, 0.30, 2)
 
 
-def draw_rain(c, frame):
-    random.seed(10)
-    for _ in range(42):
-        x0 = random.randint(0, W - 1)
-        y0 = random.randint(-H, H - 1)
-        speed = random.choice((1, 1, 2))
-        y = (y0 + frame * speed) % (H + 8) - 4
-        length = random.choice((2, 3, 3))
+RAIN_DRIZZLE = "drizzle"
+RAIN_STEADY = "steady"
+RAIN_SHOWER = "shower"
+
+RAIN_PRESETS = {
+    RAIN_DRIZZLE: {
+        "seed": 1301,
+        "count": 12,
+        "speeds": (0.35, 0.45, 0.55),
+        "lengths": (1, 1, 2),
+        "palette": ((58, 74, 96), (62, 82, 105), (70, 92, 116)),
+        "burst": 0,
+    },
+    RAIN_STEADY: {
+        "seed": 1311,
+        "count": 20,
+        "speeds": (0.85, 1.0, 1.15),
+        "lengths": (2, 2, 3),
+        "palette": ((62, 80, 104), (70, 92, 118), (82, 106, 132)),
+        "burst": 0,
+    },
+    RAIN_SHOWER: {
+        "seed": 1321,
+        "count": 26,
+        "speeds": (1.1, 1.35, 1.6),
+        "lengths": (2, 3, 3),
+        "palette": ((68, 88, 116), (80, 104, 132), (94, 122, 148)),
+        "burst": 4,
+    },
+}
+
+
+def draw_rain(c, frame, style=RAIN_STEADY):
+    preset = RAIN_PRESETS.get(style, RAIN_PRESETS[RAIN_STEADY])
+    rng = random.Random(preset["seed"])
+    burst = preset["burst"]
+    count = preset["count"]
+    if burst:
+        count += int((math.sin(frame * 0.16) + 1.0) * 0.5 * burst)
+
+    for i in range(count):
+        x0 = rng.randint(-4, W + 3)
+        y0 = rng.randint(-H, H - 1)
+        speed = rng.choice(preset["speeds"])
+        length = rng.choice(preset["lengths"])
+        phase = rng.randint(0, 80)
+        wind = rng.choice((-1, 0, 0, 1))
+        y = int((y0 + (frame + phase) * speed) % (H + 10)) - 5
+        x = x0 + int(math.sin((frame + phase + i * 7) * 0.05) * 1.4)
+
         for k in range(length):
-            px(c, x0 - (k // 2), y + k, (206, 232, 255) if k == length - 1 else (132, 196, 245))
+            col = preset["palette"][min(k, len(preset["palette"]) - 1)]
+            px(c, x - ((k + 1) // 2) + wind, y + k, col)
 
 
 def draw_snow(c, frame):
@@ -2877,8 +2940,10 @@ def draw_lamp_glow(c, frame):
     px(c, 46, 27, (clamp(150 + pulse), clamp(105 + pulse // 2), 32))
 
 
-def draw_window_lights(c, frame):
-    for x0, y0, x1, y1, phase in NIGHT_WINDOW_LIGHTS:
+def draw_window_lights(c, frame, night_lighting=None):
+    if night_lighting is None:
+        night_lighting = active_night_windows()
+    for x0, y0, x1, y1, phase in night_lighting:
         pulse = 12 + int(8 * math.sin((frame + phase) * 0.035))
         col = (
             clamp(178 + pulse),
@@ -2886,6 +2951,89 @@ def draw_window_lights(c, frame):
             clamp(48 + pulse // 2),
         )
         rect(c, x0, y0, x1, y1, col)
+
+
+def parse_open_meteo_time(value):
+    if value is None:
+        return None
+    if isinstance(value, dt.datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return dt.datetime.fromisoformat(value)
+
+
+def _night_time_context(current_time=None, sunset=None, sunrise=None):
+    now = parse_open_meteo_time(current_time)
+    sunset_time = parse_open_meteo_time(sunset)
+    sunrise_time = parse_open_meteo_time(sunrise)
+
+    if now is None:
+        now = dt.datetime.now()
+    if sunset_time is None or sunrise_time is None:
+        return now, None, None
+
+    if any(
+        value is not None and (value.tzinfo is None) != (now.tzinfo is None)
+        for value in (sunset_time, sunrise_time)
+    ):
+        now = now.replace(tzinfo=None)
+        sunset_time = sunset_time.replace(tzinfo=None)
+        sunrise_time = sunrise_time.replace(tzinfo=None)
+
+    start = sunset_time
+    end = sunrise_time
+    if end <= start:
+        end += dt.timedelta(days=1)
+
+    while now < start:
+        start -= dt.timedelta(days=1)
+        end -= dt.timedelta(days=1)
+    while now > end:
+        start += dt.timedelta(days=1)
+        end += dt.timedelta(days=1)
+
+    return now, start, end
+
+
+def night_progress(current_time=None, sunset=None, sunrise=None):
+    """Return 0 near sunset and 1 near sunrise for the active night."""
+    now, start, end = _night_time_context(current_time, sunset, sunrise)
+    if start is None or end is None:
+        return 0.5
+    if now <= start:
+        return 0.0
+    if now >= end:
+        return 1.0
+    span_seconds = max(1.0, (end - start).total_seconds())
+    return max(0.0, min(1.0, (now - start).total_seconds() / span_seconds))
+
+
+def night_window_fraction(progress):
+    progress = max(0.0, min(1.0, progress))
+    eased = progress * progress * (3.0 - 2.0 * progress)
+    return 0.08 + 0.78 * (1.0 - eased)
+
+
+def active_night_windows(current_time=None, sunset=None, sunrise=None):
+    now, start, _end = _night_time_context(current_time, sunset, sunrise)
+    progress = night_progress(current_time, sunset, sunrise)
+    count = int(round(len(CMH_NIGHT_WINDOWS) * night_window_fraction(progress)))
+    count = max(1, min(len(CMH_NIGHT_WINDOWS), count))
+
+    seed_date = start.date() if start is not None else now.date()
+    seed = NIGHT_WINDOW_SEED + seed_date.toordinal() * 1009
+    rng = random.Random(seed)
+    shuffled = list(enumerate(CMH_NIGHT_WINDOWS))
+    rng.shuffle(shuffled)
+
+    selected = sorted(shuffled[:count], key=lambda item: item[0])
+    return tuple(
+        (*coords, (seed + index * NIGHT_WINDOW_PHASE_STEP) % 480)
+        for index, coords in selected
+    )
 
 
 PHASE_DAY = "day"
@@ -3069,7 +3217,7 @@ def draw_low_sun(c, frame, phase):
     disc_raw(c, sx, sy, 2, (255, 226, 118))
 
 
-def draw_night_base(c, frame):
+def draw_night_base(c, frame, night_lighting=None):
     draw_flat_sky(c, NIGHT_SKY)
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_night)
     draw_night_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_night)
@@ -3081,7 +3229,7 @@ def draw_night_base(c, frame):
         foreground_night,
         ION_TRAIN_GLAZING_REGIONS,
     )
-    draw_window_lights(c, frame)
+    draw_window_lights(c, frame, night_lighting)
     draw_stars(c, frame)
     draw_lamp_glow(c, frame)
 
@@ -3104,7 +3252,31 @@ def draw_clouds_for_phase(c, phase):
         draw_fn(c, LANDSCAPE_SPANS, (region,), transform)
 
 
-def cloud_palette_for_phase(phase):
+def cloud_palette_for_phase(phase, storm=False):
+    if storm:
+        if phase == PHASE_NIGHT:
+            return (
+                (42, 48, 74),
+                (30, 36, 58),
+                (18, 24, 42),
+            )
+        if phase == PHASE_SUNRISE:
+            return (
+                (128, 104, 128),
+                (92, 82, 112),
+                (62, 58, 88),
+            )
+        if phase == PHASE_SUNSET:
+            return (
+                (118, 88, 120),
+                (84, 68, 104),
+                (54, 50, 82),
+            )
+        return (
+            (112, 126, 146),
+            (82, 96, 118),
+            (58, 72, 96),
+        )
     if phase == PHASE_NIGHT:
         return (
             (72, 78, 104),
@@ -3142,10 +3314,31 @@ def draw_soft_cloud(c, x, y, rows, palette):
                 px_open_sky(c, x + x0 + dx, y + dy, colors[shade])
 
 
-def draw_extra_clouds(c, phase, clouds):
+def source_cloud_color(source, palette):
+    brightness = sum(source)
+    if brightness > 620:
+        return palette[0]
+    if brightness > 460:
+        return palette[1]
+    return palette[2]
+
+
+def draw_shifted_source_cloud(c, region, dx, dy, palette):
+    for y, row in enumerate(LANDSCAPE_SPANS):
+        for x0, length, palette_index in row:
+            source = PALETTE[palette_index]
+            if is_source_sky_color(source):
+                continue
+            col = source_cloud_color(source, palette)
+            for x in range(x0, x0 + length):
+                if in_region(x, y, region):
+                    px_open_sky(c, x + dx, y + dy, col)
+
+
+def draw_extra_clouds(c, phase, clouds, storm=False):
     if clouds != CLOUD_OVERCAST:
         return
-    palette = cloud_palette_for_phase(phase)
+    palette = cloud_palette_for_phase(phase, storm)
     small = (
         ((3, 2, "m"), (6, 3, "h")),
         ((1, 4, "m"), (5, 6, "h")),
@@ -3158,7 +3351,17 @@ def draw_extra_clouds(c, phase, clouds):
         ((0, 11, "m"),),
         ((3, 6, "s"),),
     )
+    shelf = (
+        ((4, 5, "h"), (12, 4, "m")),
+        ((1, 10, "m"), (11, 10, "h")),
+        ((0, 24, "m"),),
+        ((5, 9, "s"), (15, 7, "m")),
+        ((10, 10, "s"),),
+    )
 
+    draw_shifted_source_cloud(c, CLOUD_GROUPS[0][1], 0, -4, palette)
+    draw_shifted_source_cloud(c, CLOUD_GROUPS[1][1], -18, 1, palette)
+    draw_soft_cloud(c, 22, 5, shelf, palette)
     draw_soft_cloud(c, 37, 8, small, palette)
     draw_soft_cloud(c, 50, 16, low, palette)
 
@@ -3170,9 +3373,9 @@ def draw_cloud_modifier(c, phase, clouds):
     draw_extra_clouds(c, phase, clouds)
 
 
-def draw_cmh_for_phase(c, frame, phase, condition, clouds):
+def draw_cmh_for_phase(c, frame, phase, condition, clouds, night_lighting=None):
     if phase == PHASE_NIGHT:
-        draw_night_base(c, frame)
+        draw_night_base(c, frame, night_lighting)
         if condition in (COND_CLOUDY, COND_RAIN, COND_STORM):
             draw_clouds_for_phase(c, phase)
         else:
@@ -3195,6 +3398,7 @@ def draw_cmh_for_phase(c, frame, phase, condition, clouds):
                 (region,),
                 lambda col: tint_for_phase(cloud_storm(col), phase, "sky"),
             )
+        draw_extra_clouds(c, phase, CLOUD_OVERCAST, storm=True)
         draw_storm_spans_clipped(
             c,
             LANDSCAPE_SPANS,
@@ -3272,8 +3476,17 @@ def draw_lightning(c, frame):
             px(c, int(x0 + (x1 - x0) * t), int(y0 + (y1 - y0) * t), bolt)
 
 
-def draw_condition_scene(c, frame, condition, phase, clouds, label):
-    draw_cmh_for_phase(c, frame, phase, condition, clouds)
+def draw_condition_scene(
+    c,
+    frame,
+    condition,
+    phase,
+    clouds,
+    label,
+    rain_style=RAIN_STEADY,
+    night_lighting=None,
+):
+    draw_cmh_for_phase(c, frame, phase, condition, clouds, night_lighting)
 
     if condition == COND_CLEAR:
         if phase == PHASE_DAY and clouds != CLOUD_OVERCAST:
@@ -3282,12 +3495,12 @@ def draw_condition_scene(c, frame, condition, phase, clouds, label):
         elif phase in (PHASE_SUNRISE, PHASE_SUNSET) and clouds != CLOUD_OVERCAST:
             draw_geese_packs(c, frame)
     elif condition == COND_RAIN:
-        draw_rain(c, frame)
+        draw_rain(c, frame, rain_style)
     elif condition == COND_SNOW:
         draw_snow(c, frame)
     elif condition == COND_STORM:
         draw_lightning(c, frame)
-        draw_rain(c, frame)
+        draw_rain(c, frame, RAIN_SHOWER)
 
     draw_weather_label(c, FONT, label)
 
@@ -3297,6 +3510,25 @@ def draw_weather_label(c, font, text):
     rect(c, x0, 0, W - 1, 7, (12, 18, 27))
     hline(c, x0, 0, W - x0, (39, 52, 70))
     graphics.DrawText(c, font, x0 + pad, 6, graphics.Color(255, 235, 150), text)
+
+
+DEMO_NIGHT_SUNSET = "2026-01-15T18:00"
+DEMO_NIGHT_SUNRISE = "2026-01-16T07:30"
+DEMO_NIGHT_LIGHTING_EARLY = active_night_windows(
+    "2026-01-15T19:00",
+    DEMO_NIGHT_SUNSET,
+    DEMO_NIGHT_SUNRISE,
+)
+DEMO_NIGHT_LIGHTING_DEEP = active_night_windows(
+    "2026-01-16T01:00",
+    DEMO_NIGHT_SUNSET,
+    DEMO_NIGHT_SUNRISE,
+)
+DEMO_NIGHT_LIGHTING_PREDAWN = active_night_windows(
+    "2026-01-16T06:30",
+    DEMO_NIGHT_SUNSET,
+    DEMO_NIGHT_SUNRISE,
+)
 
 
 def draw_sunny(c, frame):
@@ -3324,15 +3556,40 @@ def draw_cloudy(c, frame):
 
 
 def draw_cloudy_night(c, frame):
-    draw_condition_scene(c, frame, COND_CLEAR, PHASE_NIGHT, CLOUD_OVERCAST, "12C CLD")
+    draw_condition_scene(
+        c,
+        frame,
+        COND_CLEAR,
+        PHASE_NIGHT,
+        CLOUD_OVERCAST,
+        "12C CLD",
+        night_lighting=DEMO_NIGHT_LIGHTING_DEEP,
+    )
+
+
+def draw_drizzle(c, frame):
+    draw_condition_scene(c, frame, COND_RAIN, PHASE_DAY, CLOUD_OVERCAST, "9C DZL", RAIN_DRIZZLE)
 
 
 def draw_rainy(c, frame):
-    draw_condition_scene(c, frame, COND_RAIN, PHASE_DAY, CLOUD_OVERCAST, "9C RAIN")
+    draw_condition_scene(c, frame, COND_RAIN, PHASE_DAY, CLOUD_OVERCAST, "9C RAIN", RAIN_STEADY)
+
+
+def draw_showers(c, frame):
+    draw_condition_scene(c, frame, COND_RAIN, PHASE_DAY, CLOUD_OVERCAST, "9C SHWR", RAIN_SHOWER)
 
 
 def draw_rain_night(c, frame):
-    draw_condition_scene(c, frame, COND_RAIN, PHASE_NIGHT, CLOUD_OVERCAST, "9C RAIN")
+    draw_condition_scene(
+        c,
+        frame,
+        COND_RAIN,
+        PHASE_NIGHT,
+        CLOUD_OVERCAST,
+        "9C RAIN",
+        RAIN_STEADY,
+        DEMO_NIGHT_LIGHTING_DEEP,
+    )
 
 
 def draw_snowy(c, frame):
@@ -3344,11 +3601,51 @@ def draw_storm_sunset(c, frame):
 
 
 def draw_storm_night(c, frame):
-    draw_condition_scene(c, frame, COND_STORM, PHASE_NIGHT, CLOUD_OVERCAST, "11C STRM")
+    draw_condition_scene(
+        c,
+        frame,
+        COND_STORM,
+        PHASE_NIGHT,
+        CLOUD_OVERCAST,
+        "11C STRM",
+        night_lighting=DEMO_NIGHT_LIGHTING_DEEP,
+    )
 
 
 def draw_night(c, frame):
-    draw_condition_scene(c, frame, COND_CLEAR, PHASE_NIGHT, CLOUD_NONE, "12C CLR")
+    draw_condition_scene(
+        c,
+        frame,
+        COND_CLEAR,
+        PHASE_NIGHT,
+        CLOUD_NONE,
+        "12C CLR",
+        night_lighting=DEMO_NIGHT_LIGHTING_DEEP,
+    )
+
+
+def draw_night_early(c, frame):
+    draw_condition_scene(
+        c,
+        frame,
+        COND_CLEAR,
+        PHASE_NIGHT,
+        CLOUD_NONE,
+        "12C CLR",
+        night_lighting=DEMO_NIGHT_LIGHTING_EARLY,
+    )
+
+
+def draw_night_predawn(c, frame):
+    draw_condition_scene(
+        c,
+        frame,
+        COND_CLEAR,
+        PHASE_NIGHT,
+        CLOUD_NONE,
+        "12C CLR",
+        night_lighting=DEMO_NIGHT_LIGHTING_PREDAWN,
+    )
 
 
 def load_font():
@@ -3379,6 +3676,9 @@ SCENES = (
     draw_partly_cloudy_sunset,
     draw_cloudy_sunset,
     draw_cloudy_night,
+    draw_drizzle,
+    draw_rainy,
+    draw_showers,
     draw_rain_night,
     draw_snowy,
     draw_storm_sunset,
