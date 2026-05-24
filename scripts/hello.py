@@ -26,9 +26,18 @@ matrix = RGBMatrix(options=opts)
 offscreen = matrix.CreateFrameCanvas()
 
 
+_last_debug_brightness = None
+
+
 def scaled_color(r, g, b):
-    scale = read_live_brightness() / 100
-    return graphics.Color(int(r * scale), int(g * scale), int(b * scale))
+    global _last_debug_brightness
+    brightness = read_live_brightness()
+    scale = brightness / 100
+    scaled = (int(r * scale), int(g * scale), int(b * scale))
+    if brightness != _last_debug_brightness:
+        print(f"[hello] brightness={brightness} color={scaled}", flush=True)
+        _last_debug_brightness = brightness
+    return graphics.Color(*scaled)
 
 
 pos = offscreen.width
