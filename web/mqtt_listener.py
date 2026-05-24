@@ -118,6 +118,10 @@ def write_brightness(value: str):
         return
     n = max(0, min(100, n))
     BRIGHTNESS_FILE.write_text(str(n))
+    try:
+        BRIGHTNESS_FILE.chmod(0o666)
+    except OSError as exc:
+        print(f"[listener] could not update brightness file permissions: {exc}")
     print(f"[listener] brightness -> {n}")
     if n == 0:
         if _current_mode != "off":

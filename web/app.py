@@ -63,7 +63,12 @@ def read_brightness():
 
 
 def write_brightness(value):
-    BRIGHTNESS_FILE.write_text(str(clamp_brightness(value)))
+    try:
+        BRIGHTNESS_FILE.write_text(str(clamp_brightness(value)))
+        return True
+    except OSError as exc:
+        app.logger.warning("Could not write brightness cache %s: %s", BRIGHTNESS_FILE, exc)
+        return False
 
 
 @app.route("/")
@@ -114,9 +119,10 @@ def set_brightness():
     if not 0 <= value <= 100:
         return jsonify(ok=False, error="value must be 0-100"), 400
     ok = publish(TOPIC_BRIGHTNESS, str(value))
+    cached = False
     if ok:
-        write_brightness(value)
-    return jsonify(ok=ok, value=value)
+        cached = write_brightness(value)
+    return jsonify(ok=ok, value=value, cached=cached)
 
 
 @app.route("/status", methods=["POST"])
