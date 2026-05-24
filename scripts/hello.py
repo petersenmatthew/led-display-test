@@ -3,7 +3,6 @@ import time
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 from led_brightness import (
     apply_live_brightness,
-    read_initial_brightness,
     read_live_brightness,
 )
 
@@ -21,7 +20,7 @@ font.LoadFont(os.path.join(FONT_DIR, "7x13.bdf"))
 opts = RGBMatrixOptions()
 opts.rows = 32
 opts.cols = 64
-opts.brightness = read_initial_brightness()
+opts.brightness = 100
 matrix = RGBMatrix(options=opts)
 offscreen = matrix.CreateFrameCanvas()
 

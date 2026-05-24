@@ -25,10 +25,7 @@ def _brightness_file():
     configured = os.environ.get("LED_BRIGHTNESS_FILE")
     if configured:
         return Path(configured)
-    try:
-        return Path(__file__).resolve().parent.parent / "web" / "brightness.txt"
-    except NameError:
-        return Path("web") / "brightness.txt"
+    return Path("/tmp/led-display-brightness.txt")
 
 
 def _read_file():

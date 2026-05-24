@@ -2,7 +2,7 @@
 
 Subscribes to dorm/display/# and reacts:
   - mode       -> kill current display script and launch the new one
-  - brightness -> write to web/brightness.txt (a shared config file)
+  - brightness -> write to /tmp/led-display-brightness.txt
   - status     -> write to status.txt at the repo root
 
 Run with sudo so the rpi-rgb-led-matrix scripts can access the GPIO.
@@ -25,7 +25,7 @@ TOPIC_ROOT = "dorm/display/#"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 STATUS_FILE = REPO_ROOT / "status.txt"
-BRIGHTNESS_FILE = Path(__file__).resolve().parent / "brightness.txt"
+BRIGHTNESS_FILE = Path("/tmp/led-display-brightness.txt")
 DEFAULT_BRIGHTNESS = 60
 
 ALLOWED_MODES = {

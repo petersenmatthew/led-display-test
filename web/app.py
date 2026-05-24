@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TOPIC_MODE = "dorm/display/mode"
 TOPIC_BRIGHTNESS = "dorm/display/brightness"
 TOPIC_STATUS = "dorm/display/status"
-BRIGHTNESS_FILE = Path(__file__).resolve().parent / "brightness.txt"
+BRIGHTNESS_FILE = Path("/tmp/led-display-brightness.txt")
 DEFAULT_BRIGHTNESS = 60
 
 ALLOWED_MODES = {
@@ -65,6 +65,7 @@ def read_brightness():
 def write_brightness(value):
     try:
         BRIGHTNESS_FILE.write_text(str(clamp_brightness(value)))
+        BRIGHTNESS_FILE.chmod(0o666)
         return True
     except OSError as exc:
         app.logger.warning("Could not write brightness cache %s: %s", BRIGHTNESS_FILE, exc)
