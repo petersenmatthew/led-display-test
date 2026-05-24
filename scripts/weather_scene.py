@@ -3826,7 +3826,7 @@ def train_stop_sky_pixel_for(phase, condition, clouds, y=None):
         )
     if condition in (COND_RAIN, COND_STORM):
         return storm_sky_for_phase(phase)
-    if phase == PHASE_DAY and clouds == CLOUD_OVERCAST and condition == COND_CLEAR:
+    if phase == PHASE_DAY and (clouds == CLOUD_OVERCAST or condition == COND_CLOUDY):
         return CLOUDY_DAY_SKY
     return None
 
