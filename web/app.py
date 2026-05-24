@@ -17,6 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TOPIC_MODE = "dorm/display/mode"
 TOPIC_BRIGHTNESS = "dorm/display/brightness"
 TOPIC_STATUS = "dorm/display/status"
+BRIGHTNESS_FILE = Path(__file__).resolve().parent / "brightness.txt"
+DEFAULT_BRIGHTNESS = 60
 
 ALLOWED_MODES = {
     "basket",
@@ -45,9 +47,28 @@ def publish(topic, payload, retain=True):
     return info.rc == mqtt.MQTT_ERR_SUCCESS
 
 
+def clamp_brightness(value, default=DEFAULT_BRIGHTNESS):
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        n = default
+    return max(0, min(100, n))
+
+
+def read_brightness():
+    try:
+        return clamp_brightness(BRIGHTNESS_FILE.read_text())
+    except OSError:
+        return DEFAULT_BRIGHTNESS
+
+
+def write_brightness(value):
+    BRIGHTNESS_FILE.write_text(str(clamp_brightness(value)))
+
+
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", initial_brightness=read_brightness())
 
 
 @app.route("/favicon.ico")
@@ -80,8 +101,11 @@ def set_mode():
     return jsonify(ok=ok, mode=mode)
 
 
-@app.route("/brightness", methods=["POST"])
+@app.route("/brightness", methods=["GET", "POST"])
 def set_brightness():
+    if request.method == "GET":
+        return jsonify(ok=True, value=read_brightness())
+
     data = request.get_json(silent=True) or request.form
     try:
         value = int(data.get("value"))
@@ -90,6 +114,8 @@ def set_brightness():
     if not 0 <= value <= 100:
         return jsonify(ok=False, error="value must be 0-100"), 400
     ok = publish(TOPIC_BRIGHTNESS, str(value))
+    if ok:
+        write_brightness(value)
     return jsonify(ok=ok, value=value)
 
 

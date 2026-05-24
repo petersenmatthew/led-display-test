@@ -1,9 +1,11 @@
 import time
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
+from led_brightness import apply_live_brightness, read_initial_brightness
 
 opts = RGBMatrixOptions()
 opts.rows = 32
 opts.cols = 64
+opts.brightness = read_initial_brightness()
 matrix = RGBMatrix(options=opts)
 offscreen = matrix.CreateFrameCanvas()
 
@@ -580,6 +582,7 @@ idx = 0
 cnt = 0
 
 while True:
+    apply_live_brightness(matrix)
     offscreen.Clear()
     eyes, mouth, dur = ANIM[idx]
     draw_jaylen(offscreen, eyes, mouth)

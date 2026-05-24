@@ -13,6 +13,7 @@ import os
 import random
 
 from rgbmatrix import graphics
+from led_brightness import read_initial_brightness
 
 ROWS = 32
 COLS = 64
@@ -2576,7 +2577,7 @@ LANDSCAPE_SPANS = (
 def create_matrix(
     gpio_slowdown=GPIO_SLOWDOWN,
     pwm_bits=PWM_BITS,
-    brightness=BRIGHTNESS,
+    brightness=None,
     hardware_mapping=HARDWARE_MAPPING,
 ):
     from rgbmatrix import RGBMatrix, RGBMatrixOptions
@@ -2587,7 +2588,9 @@ def create_matrix(
     options.chain_length = CHAIN_LENGTH
     options.parallel = PARALLEL
     options.gpio_slowdown = gpio_slowdown
-    options.brightness = brightness
+    options.brightness = (
+        read_initial_brightness(BRIGHTNESS) if brightness is None else brightness
+    )
     options.hardware_mapping = hardware_mapping
     options.pwm_bits = pwm_bits
     return RGBMatrix(options=options)

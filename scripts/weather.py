@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 
+from led_brightness import apply_live_brightness
 from weather_scene import (
     CLOUD_NONE,
     CLOUD_OVERCAST,
@@ -183,6 +184,7 @@ def main():
             now = time.monotonic()
             frame = int((now - animation_start) / FRAME_DELAY)
 
+            apply_live_brightness(matrix)
             canvas.Clear()
             draw_condition_scene(
                 canvas,

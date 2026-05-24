@@ -266,8 +266,8 @@
     <section>
       <p class="label">brightness</p>
       <div class="slider-row">
-        <input type="range" id="brightness" min="0" max="100" value="60" />
-        <span class="slider-value" id="brightnessValue">60</span>
+        <input type="range" id="brightness" min="0" max="100" value="{{ initial_brightness|default(60) }}" />
+        <span class="slider-value" id="brightnessValue">{{ initial_brightness|default(60) }}</span>
       </div>
     </section>
 
@@ -430,10 +430,10 @@
   requestAnimationFrame(tick);
 
   // ─── Shared Python preview worker ───────────────────────────────────────────
-  const APP_VERSION = "web-shared-renderer-v2";
+  const APP_VERSION = "web-shared-renderer-v3";
   let worker = null;
   const scriptDependencies = {
-    weather: ["weather_scene"],
+    weather: ["weather_scene", "led_brightness"],
   };
 
   function clearFrame() {
@@ -487,6 +487,9 @@
     const deps = new Set(scriptDependencies[name] || []);
     if (/\b(?:from\s+weather_scene\s+import|import\s+weather_scene\b)/.test(code)) {
       deps.add("weather_scene");
+    }
+    if (/\b(?:from\s+led_brightness\s+import|import\s+led_brightness\b)/.test(code)) {
+      deps.add("led_brightness");
     }
     const files = {};
     await Promise.all([...deps].map(async (dep) => {

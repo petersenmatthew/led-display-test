@@ -2,6 +2,7 @@ import os
 import time
 from datetime import datetime
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+from led_brightness import apply_live_brightness, read_initial_brightness
 
 # In Pyodide (browser), fonts are at "./fonts/"; on Pi, use relative path
 try:
@@ -23,6 +24,7 @@ font_med.LoadFont(os.path.join(FONT_DIR, "6x9.bdf"))
 opts = RGBMatrixOptions()
 opts.rows = 32
 opts.cols = 64
+opts.brightness = read_initial_brightness()
 matrix = RGBMatrix(options=opts)
 offscreen = matrix.CreateFrameCanvas()
 
@@ -161,6 +163,7 @@ hold_counter = 0
 is_sliding = False
 
 while True:
+    apply_live_brightness(matrix)
     offscreen.Clear()
     
     prev_class, curr_class, next_class = find_class_context()

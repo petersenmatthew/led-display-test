@@ -389,11 +389,11 @@
   const editor   = document.getElementById("editor");
   const samples  = document.getElementById("samples");
 
-  const APP_VERSION = "weather-shared-renderer-v2";
+  const APP_VERSION = "weather-shared-renderer-v3";
   let worker = null;
   const scriptDependencies = {
-    weather: ["weather_scene"],
-    "weather-test": ["weather_scene"],
+    weather: ["weather_scene", "led_brightness"],
+    "weather-test": ["weather_scene", "led_brightness"],
   };
 
   function setStatus(s) { statusEl.textContent = s; }
@@ -444,6 +444,9 @@
     const deps = new Set(scriptDependencies[name] || []);
     if (/\b(?:from\s+weather_scene\s+import|import\s+weather_scene\b)/.test(code)) {
       deps.add("weather_scene");
+    }
+    if (/\b(?:from\s+led_brightness\s+import|import\s+led_brightness\b)/.test(code)) {
+      deps.add("led_brightness");
     }
     const files = {};
     await Promise.all([...deps].map(async (dep) => {

@@ -26,6 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 STATUS_FILE = REPO_ROOT / "status.txt"
 BRIGHTNESS_FILE = Path(__file__).resolve().parent / "brightness.txt"
+DEFAULT_BRIGHTNESS = 60
 
 ALLOWED_MODES = {
     "basket",
@@ -44,6 +45,9 @@ ALLOWED_MODES = {
 PYTHON_BIN = sys.executable or "python3"
 
 _current_proc: subprocess.Popen | None = None
+_current_mode: str = "off"
+_last_non_off_mode: str | None = None
+_restore_on_brightness: bool = False
 
 
 def stop_current():
@@ -62,21 +66,38 @@ def stop_current():
     _current_proc = None
 
 
+def read_brightness() -> int:
+    try:
+        value = int(BRIGHTNESS_FILE.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        value = DEFAULT_BRIGHTNESS
+    return max(0, min(100, value))
+
+
 def launch_mode(mode: str):
-    global _current_proc
+    global _current_proc, _current_mode, _last_non_off_mode, _restore_on_brightness
     stop_current()
     if mode == "off":
+        _current_mode = "off"
+        _restore_on_brightness = False
         print("[listener] display off")
         return
+
+    brightness = read_brightness()
+    _last_non_off_mode = mode
+    if brightness == 0:
+        _current_mode = "off"
+        _restore_on_brightness = True
+        print(f"[listener] brightness is 0, keeping {mode} off")
+        return
+
     script = SCRIPTS_DIR / f"{mode}.py"
     if not script.exists():
         print(f"[listener] script not found: {script}")
         return
     env = os.environ.copy()
-    try:
-        env["LED_BRIGHTNESS"] = BRIGHTNESS_FILE.read_text().strip()
-    except FileNotFoundError:
-        pass
+    env["LED_BRIGHTNESS"] = str(brightness)
+    env["LED_BRIGHTNESS_FILE"] = str(BRIGHTNESS_FILE)
     print(f"[listener] launching {script}")
     _current_proc = subprocess.Popen(
         [PYTHON_BIN, str(script)],
@@ -84,9 +105,12 @@ def launch_mode(mode: str):
         env=env,
         start_new_session=True,
     )
+    _current_mode = mode
+    _restore_on_brightness = False
 
 
 def write_brightness(value: str):
+    global _current_mode, _restore_on_brightness
     try:
         n = int(value)
     except ValueError:
@@ -95,6 +119,14 @@ def write_brightness(value: str):
     n = max(0, min(100, n))
     BRIGHTNESS_FILE.write_text(str(n))
     print(f"[listener] brightness -> {n}")
+    if n == 0:
+        if _current_mode != "off":
+            stop_current()
+            _current_mode = "off"
+            _restore_on_brightness = True
+            print("[listener] display off")
+    elif _current_mode == "off" and _restore_on_brightness and _last_non_off_mode:
+        launch_mode(_last_non_off_mode)
 
 
 def write_status(text: str):

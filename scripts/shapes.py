@@ -1,8 +1,10 @@
 import time, math
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+from led_brightness import apply_live_brightness, read_initial_brightness
 
 opts = RGBMatrixOptions()
 opts.rows = 32; opts.cols = 64
+opts.brightness = read_initial_brightness()
 matrix = RGBMatrix(options=opts)
 fc = matrix.CreateFrameCanvas()
 
@@ -12,6 +14,7 @@ mag   = graphics.Color(255, 80, 180)
 
 t = 0
 while True:
+    apply_live_brightness(matrix)
     fc.Clear()
     # rotating line
     cx, cy = 32, 16

@@ -1,8 +1,10 @@
 import time, math
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
+from led_brightness import apply_live_brightness, read_initial_brightness
 
 opts = RGBMatrixOptions()
 opts.rows = 32; opts.cols = 64
+opts.brightness = read_initial_brightness()
 matrix = RGBMatrix(options=opts)
 fc = matrix.CreateFrameCanvas()
 
@@ -21,6 +23,7 @@ def hsv(h, s, v):
 
 t0 = 0
 while True:
+    apply_live_brightness(matrix)
     for x in range(64):
         for y in range(32):
             r, g, b = hsv((x + t0) / 64.0, 1.0, 0.9)
