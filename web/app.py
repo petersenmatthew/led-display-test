@@ -4,6 +4,9 @@ Publishes user actions to a local Mosquitto broker on localhost:1883.
 The companion mqtt_listener.py runs on the Pi and acts on the messages.
 """
 
+import fcntl
+import os
+import sys
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
@@ -19,6 +22,9 @@ TOPIC_BRIGHTNESS = "dorm/display/brightness"
 TOPIC_STATUS = "dorm/display/status"
 BRIGHTNESS_FILE = Path("/tmp/led-display-brightness.txt")
 DEFAULT_BRIGHTNESS = 60
+LOCK_FILE = Path("/tmp/led-web.lock")
+
+_instance_lock = None
 
 ALLOWED_MODES = {
     "basket",
@@ -34,6 +40,22 @@ ALLOWED_MODES = {
     "weather",
     "off",
 }
+
+
+def acquire_instance_lock():
+    global _instance_lock
+    lock_file = LOCK_FILE.open("w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("[led-web] already running; exiting", file=sys.stderr)
+        sys.exit(1)
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    _instance_lock = lock_file
+
+
+acquire_instance_lock()
 
 app = Flask(__name__)
 

@@ -10,6 +10,7 @@ Run with sudo so the rpi-rgb-led-matrix scripts can access the GPIO.
 
 from __future__ import annotations
 
+import fcntl
 import os
 import signal
 import subprocess
@@ -27,6 +28,7 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 STATUS_FILE = REPO_ROOT / "status.txt"
 BRIGHTNESS_FILE = Path("/tmp/led-display-brightness.txt")
 DEFAULT_BRIGHTNESS = 60
+LOCK_FILE = Path("/tmp/led-listener.lock")
 
 ALLOWED_MODES = {
     "basket",
@@ -48,6 +50,20 @@ _current_proc: subprocess.Popen | None = None
 _current_mode: str = "off"
 _last_non_off_mode: str | None = None
 _restore_on_brightness: bool = False
+_instance_lock = None
+
+
+def acquire_instance_lock():
+    global _instance_lock
+    lock_file = LOCK_FILE.open("w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("[listener] already running; exiting", file=sys.stderr)
+        sys.exit(1)
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    _instance_lock = lock_file
 
 
 def stop_current():
@@ -160,6 +176,7 @@ def on_message(client, userdata, msg):
 
 
 def main():
+    acquire_instance_lock()
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="led-listener")
     client.on_connect = on_connect
     client.on_message = on_message
