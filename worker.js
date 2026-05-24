@@ -50,17 +50,28 @@ function parseBDF(text) {
 
 // ─── Font registry ───────────────────────────────────────────────────────────
 const FONTS = {}; // basename → parsed font
+const FONT_TEXTS = {}; // basename → raw BDF text for Python open("./fonts/...")
 
 async function preloadFonts() {
   await Promise.all(FONT_FILES.map(async (name) => {
     try {
       const r = await fetch(FONT_BASE + name);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      FONTS[name] = parseBDF(await r.text());
+      const text = await r.text();
+      FONT_TEXTS[name] = text;
+      FONTS[name] = parseBDF(text);
     } catch (e) {
       postMessage({ type: "stderr", s: `[font] failed to load ${name}: ${e}\n` });
     }
   }));
+}
+
+function writeFontFilesToPyodide() {
+  try { pyodide.FS.mkdir("/fonts"); } catch (_e) {}
+  for (const [name, text] of Object.entries(FONT_TEXTS)) {
+    pyodide.FS.writeFile(`/fonts/${name}`, text);
+  }
+  try { pyodide.FS.chdir("/"); } catch (_e) {}
 }
 
 // ─── rgbmatrix shim ──────────────────────────────────────────────────────────
@@ -261,6 +272,7 @@ let initPromise = (async () => {
   pyodide.setStderr({ batched: (s) => postMessage({ type: "stderr", s: s + "\n" }) });
   postMessage({ type: "status", s: "loading fonts…" });
   await preloadFonts();
+  writeFontFilesToPyodide();
   pyodide.registerJsModule("rgbmatrix", rgbmatrixModule);
   postMessage({ type: "ready" });
 })().catch((e) => {

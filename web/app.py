@@ -4,11 +4,15 @@ Publishes user actions to a local Mosquitto broker on localhost:1883.
 The companion mqtt_listener.py runs on the Pi and acts on the messages.
 """
 
-from flask import Flask, render_template, request, jsonify
+from pathlib import Path
+
+from flask import Flask, jsonify, render_template, request, send_from_directory
 import paho.mqtt.client as mqtt
 
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 TOPIC_MODE = "dorm/display/mode"
 TOPIC_BRIGHTNESS = "dorm/display/brightness"
@@ -44,6 +48,26 @@ def publish(topic, payload, retain=True):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return "", 204
+
+
+@app.route("/worker.js")
+def worker():
+    return send_from_directory(REPO_ROOT, "worker.js")
+
+
+@app.route("/scripts/<path:filename>")
+def scripts(filename):
+    return send_from_directory(REPO_ROOT / "scripts", filename)
+
+
+@app.route("/fonts/<path:filename>")
+def fonts(filename):
+    return send_from_directory(REPO_ROOT / "fonts", filename)
 
 
 @app.route("/mode", methods=["POST"])
