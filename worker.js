@@ -66,12 +66,18 @@ async function preloadFonts() {
   }));
 }
 
+function ensureDir(path) {
+  try { pyodide.FS.mkdir(path); } catch (_e) {}
+}
+
 function writeFontFilesToPyodide() {
-  try { pyodide.FS.mkdir("/fonts"); } catch (_e) {}
+  const fontDirs = ["/fonts", "/home/fonts", "/home/pyodide/fonts"];
+  for (const dir of fontDirs) ensureDir(dir);
   for (const [name, text] of Object.entries(FONT_TEXTS)) {
-    pyodide.FS.writeFile(`/fonts/${name}`, text);
+    for (const dir of fontDirs) {
+      pyodide.FS.writeFile(`${dir}/${name}`, text);
+    }
   }
-  try { pyodide.FS.chdir("/"); } catch (_e) {}
 }
 
 // ─── rgbmatrix shim ──────────────────────────────────────────────────────────
