@@ -3553,22 +3553,88 @@ def draw_night_base(c, frame, night_lighting=None):
     draw_lamp_glow(c, frame)
 
 
-def draw_clouds_for_phase(c, phase):
+CLOUD_LAYOUT_SEED = 42087
+CLOUD_DRIFT_CYCLE_SECONDS = 90.0
+CLOUD_DRIFT_CYCLE_FRAMES = max(
+    1, int(round(CLOUD_DRIFT_CYCLE_SECONDS / FRAME_DELAY))
+)
+CLOUD_SAFE_POCKETS = (
+    (1, 1, 16, 14),
+    (35, 8, 62, 17),
+)
+CLOUD_MOTION_LANES = {
+    (0, 0): (1, 1, 16, 8),
+    (1, 0): (35, 8, 62, 12),
+    (2, 0): (35, 14, 62, 17),
+    (3, 1): (1, 9, 16, 14),
+    (4, 1): (35, 13, 62, 17),
+    (5, 2): (1, 9, 16, 14),
+    (6, 2): (35, 13, 62, 17),
+}
+
+
+def animated_cloud_offset(frame, index, region, layer=0):
+    x0, y0, x1, y1 = region
+    width = x1 - x0 + 1
+    height = y1 - y0 + 1
+    cycle = frame // CLOUD_DRIFT_CYCLE_FRAMES
+    cycle_frame = frame % CLOUD_DRIFT_CYCLE_FRAMES
+    seed = CLOUD_LAYOUT_SEED + cycle * 7919 + index * 101 + layer * 1009
+    rng = random.Random(seed)
+
+    pockets = (CLOUD_MOTION_LANES.get((index, layer)),)
+    if pockets[0] is None:
+        pockets = CLOUD_SAFE_POCKETS
+
+    choices = []
+    for pocket in pockets:
+        pocket_x0, pocket_y0, pocket_x1, pocket_y1 = pocket
+        max_drift = pocket_x1 - pocket_x0 + 1 - width
+        max_y = pocket_y1 - height + 1
+        if max_drift >= 2 and max_y >= pocket_y0:
+            choices.append((pocket, max_drift, max_y))
+
+    if choices:
+        pocket, max_drift, max_y = choices[rng.randrange(len(choices))]
+        pocket_x0, pocket_y0, pocket_x1, _pocket_y1 = pocket
+        drift = rng.randint(2, min(8, max_drift))
+        target_x = rng.randint(pocket_x0, pocket_x1 - width - drift + 1)
+        target_y = rng.randint(pocket_y0, max_y)
+    else:
+        drift = 2
+        target_x = rng.randint(0, max(0, W - width - drift))
+        target_y = rng.randint(1, max(1, min(17, H - height - 1)))
+
+    progress = min(1.0, (cycle_frame / CLOUD_DRIFT_CYCLE_FRAMES) * rng.uniform(0.8, 1.0))
+    target_x += int(round(progress * drift))
+    return target_x - x0, target_y - y0
+
+
+def draw_shifted_cloud_region_transformed(c, region, dx, dy, transform):
+    for y, row in enumerate(LANDSCAPE_SPANS):
+        for x0, length, palette_index in row:
+            source = PALETTE[palette_index]
+            if is_source_sky_color(source):
+                continue
+            col = transform(source)
+            for x in range(x0, x0 + length):
+                if in_region(x, y, region):
+                    px_open_sky(c, x + dx, y + dy, col)
+
+
+def draw_clouds_for_phase(c, phase, frame):
     if phase == PHASE_NIGHT:
         transform = cloud_night
-        draw_fn = draw_night_spans_clipped
     elif phase == PHASE_SUNRISE:
         transform = cloud_sunrise
-        draw_fn = draw_storm_spans_clipped
     elif phase == PHASE_SUNSET:
         transform = cloud_sunset
-        draw_fn = draw_storm_spans_clipped
     else:
         transform = lambda col: blend_color(col, (150, 165, 180), 0.18)
-        draw_fn = draw_storm_spans_clipped
 
-    for _name, region in CLOUD_GROUPS:
-        draw_fn(c, LANDSCAPE_SPANS, (region,), transform)
+    for index, (_name, region) in enumerate(CLOUD_GROUPS):
+        dx, dy = animated_cloud_offset(frame, index, region)
+        draw_shifted_cloud_region_transformed(c, region, dx, dy, transform)
 
 
 def cloud_palette_for_phase(phase, storm=False):
@@ -3621,6 +3687,20 @@ def cloud_palette_for_phase(phase, storm=False):
     )
 
 
+SOFT_CLOUD_SMALL = (
+    ((3, 2, "m"), (6, 3, "h")),
+    ((1, 4, "m"), (5, 6, "h")),
+    ((0, 12, "m"),),
+    ((3, 7, "s"),),
+)
+SOFT_CLOUD_LOW = (
+    ((4, 3, "h"),),
+    ((1, 8, "m"),),
+    ((0, 11, "m"),),
+    ((3, 6, "s"),),
+)
+
+
 def draw_soft_cloud(c, x, y, rows, palette):
     colors = {
         "h": palette[0],
@@ -3654,51 +3734,54 @@ def draw_shifted_source_cloud(c, region, dx, dy, palette):
                     px_open_sky(c, x + dx, y + dy, col)
 
 
-def draw_extra_clouds(c, phase, clouds, storm=False):
+def cloud_rows_width(rows):
+    return max(x0 + length for spans in rows for x0, length, _shade in spans)
+
+
+def draw_animated_soft_cloud(c, frame, index, x, y, rows, palette):
+    width = cloud_rows_width(rows)
+    region = (x, y, x + width - 1, y + len(rows) - 1)
+    dx, dy = animated_cloud_offset(frame, index, region, layer=2)
+    draw_soft_cloud(c, x + dx, y + dy, rows, palette)
+
+
+def draw_animated_shifted_source_cloud(c, frame, index, region, palette):
+    dx, dy = animated_cloud_offset(frame, index, region, layer=1)
+    draw_shifted_source_cloud(c, region, dx, dy, palette)
+
+
+def draw_extra_clouds(c, phase, clouds, frame, storm=False):
     if clouds != CLOUD_OVERCAST:
         return
     palette = cloud_palette_for_phase(phase, storm)
-    small = (
-        ((3, 2, "m"), (6, 3, "h")),
-        ((1, 4, "m"), (5, 6, "h")),
-        ((0, 12, "m"),),
-        ((3, 7, "s"),),
-    )
-    low = (
-        ((4, 3, "h"),),
-        ((1, 8, "m"),),
-        ((0, 11, "m"),),
-        ((3, 6, "s"),),
-    )
-    shelf = (
-        ((4, 5, "h"), (12, 4, "m")),
-        ((1, 10, "m"), (11, 10, "h")),
-        ((0, 24, "m"),),
-        ((5, 9, "s"), (15, 7, "m")),
-        ((10, 10, "s"),),
-    )
-
-    draw_shifted_source_cloud(c, CLOUD_GROUPS[0][1], 0, -4, palette)
-    draw_shifted_source_cloud(c, CLOUD_GROUPS[1][1], -18, 1, palette)
-    draw_soft_cloud(c, 22, 5, shelf, palette)
-    draw_soft_cloud(c, 37, 8, small, palette)
-    draw_soft_cloud(c, 50, 16, low, palette)
+    draw_animated_shifted_source_cloud(c, frame, 3, CLOUD_GROUPS[0][1], palette)
+    draw_animated_shifted_source_cloud(c, frame, 4, CLOUD_GROUPS[1][1], palette)
+    draw_animated_soft_cloud(c, frame, 5, 37, 8, SOFT_CLOUD_SMALL, palette)
+    draw_animated_soft_cloud(c, frame, 6, 50, 16, SOFT_CLOUD_LOW, palette)
 
 
-def draw_cloud_modifier(c, phase, clouds):
+def draw_partial_clouds(c, phase, frame):
+    palette = cloud_palette_for_phase(phase)
+    draw_animated_soft_cloud(c, frame, 5, 37, 8, SOFT_CLOUD_SMALL, palette)
+    draw_animated_soft_cloud(c, frame, 6, 50, 16, SOFT_CLOUD_LOW, palette)
+
+
+def draw_cloud_modifier(c, phase, clouds, frame):
     if clouds == CLOUD_NONE:
         return
-    draw_clouds_for_phase(c, phase)
-    draw_extra_clouds(c, phase, clouds)
+    if clouds == CLOUD_OVERCAST:
+        draw_extra_clouds(c, phase, clouds, frame)
+        return
+    draw_partial_clouds(c, phase, frame)
 
 
 def draw_cmh_for_phase(c, frame, phase, condition, clouds, night_lighting=None):
     if phase == PHASE_NIGHT:
         draw_night_base(c, frame, night_lighting)
         if condition in (COND_CLOUDY, COND_RAIN, COND_STORM):
-            draw_clouds_for_phase(c, phase)
+            draw_extra_clouds(c, phase, CLOUD_OVERCAST, frame)
         else:
-            draw_cloud_modifier(c, phase, clouds)
+            draw_cloud_modifier(c, phase, clouds, frame)
         return
 
     if condition in (COND_RAIN, COND_STORM):
@@ -3710,14 +3793,7 @@ def draw_cmh_for_phase(c, frame, phase, condition, clouds, night_lighting=None):
             draw_open_sky_details(c, detail_transform)
         else:
             draw_flat_sky(c, storm_sky_for_phase(phase))
-        for _name, region in CLOUD_GROUPS:
-            draw_storm_spans_clipped(
-                c,
-                LANDSCAPE_SPANS,
-                (region,),
-                lambda col: tint_for_phase(cloud_storm(col), phase, "sky"),
-            )
-        draw_extra_clouds(c, phase, CLOUD_OVERCAST, storm=True)
+        draw_extra_clouds(c, phase, CLOUD_OVERCAST, frame, storm=True)
         draw_storm_spans_clipped(
             c,
             LANDSCAPE_SPANS,
@@ -3751,7 +3827,7 @@ def draw_cmh_for_phase(c, frame, phase, condition, clouds, night_lighting=None):
             draw_low_sun(c, frame, phase)
         draw_twilight_wisps(c, phase)
         draw_open_sky_details(c, building_sunrise)
-        draw_cloud_modifier(c, phase, clouds)
+        draw_cloud_modifier(c, phase, clouds, frame)
         draw_storm_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_sunrise)
         draw_storm_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_sunrise)
         draw_storm_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, building_sunrise)
@@ -3762,7 +3838,7 @@ def draw_cmh_for_phase(c, frame, phase, condition, clouds, night_lighting=None):
             draw_low_sun(c, frame, phase)
         draw_twilight_wisps(c, phase)
         draw_open_sky_details(c, building_sunset)
-        draw_cloud_modifier(c, phase, clouds)
+        draw_cloud_modifier(c, phase, clouds, frame)
         draw_storm_spans_clipped(c, LANDSCAPE_SPANS, LEFT_BUILDING_REGIONS, building_sunset)
         draw_storm_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, building_sunset)
         draw_storm_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, building_sunset)
@@ -3773,13 +3849,13 @@ def draw_cmh_for_phase(c, frame, phase, condition, clouds, night_lighting=None):
         draw_storm_spans_clipped(c, LANDSCAPE_SPANS, MAIN_BUILDING_REGIONS, lambda col: col)
         draw_storm_spans_clipped(c, LANDSCAPE_SPANS, RIGHT_FOREGROUND_REGIONS, lambda col: col)
         draw_storm_spans_clipped(c, LANDSCAPE_SPANS, FOREGROUND_REGIONS, lambda col: col)
-        draw_cloud_modifier(c, phase, CLOUD_OVERCAST)
+        draw_cloud_modifier(c, phase, CLOUD_OVERCAST, frame)
     elif condition == COND_SNOW:
         draw_cmh_scene(c, frame, sky_transform=sky_winter, draw_cloud_layer=False)
-        draw_cloud_modifier(c, phase, clouds)
+        draw_cloud_modifier(c, phase, clouds, frame)
     else:
         draw_cmh_scene(c, frame, draw_cloud_layer=False)
-        draw_cloud_modifier(c, phase, clouds)
+        draw_cloud_modifier(c, phase, clouds, frame)
 
 
 def draw_lightning(c, frame):
