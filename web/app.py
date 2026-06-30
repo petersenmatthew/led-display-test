@@ -29,6 +29,7 @@ _instance_lock = None
 ALLOWED_MODES = {
     "basket",
     "carousel",
+    "github_contributions",
     "hello",
     "jaylen",
     "justin",

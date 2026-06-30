@@ -17,3 +17,5 @@ matrix = RGBMatrix(options=opts)
 while True:
     apply_live_brightness(matrix)
     # draw frame...
+
+when making new script, ALWAYS add to control panel too
