@@ -26,7 +26,7 @@ from led_brightness import apply_live_brightness, read_initial_brightness
 ROWS = 32
 COLS = 64
 
-FRAME_SLEEP = 0.045  # ~22 fps
+FRAME_SLEEP = 0.1  # ~14 fps (raise to slow the fire down, lower to speed up)
 
 # ─── Fireplace geometry ──────────────────────────────────────────────────────
 XC = 31.5              # horizontal center
