@@ -59,8 +59,8 @@ def on_arch_rim(x, y):
 
 # ─── Flame source ────────────────────────────────────────────────────────────
 SEED_Y = 24            # flames seed just above the log pile so the base shows
-FIRE_HALF = 19         # seed spans XC +/- FIRE_HALF (wide, fills the firebox)
 COOL = 4               # higher = shorter flames
+# (flame base width is set by SEED_PLATEAU / SEED_TAPER further down)
 
 
 def _build_palette(stops, n):
@@ -228,15 +228,22 @@ BASE = build_bricks()
 # ─── Flame + particle state ──────────────────────────────────────────────────
 heat = [[0] * COLS for _ in range(ROWS)]
 
-# Per-column seed intensity: a broad plateau across the log pile that tapers at
-# the edges, giving a wide fire base with room for licking tongues on top.
+# Per-column seed intensity: a flat, full-intensity plateau sitting squarely on
+# the log pile, with a smooth cosine taper to zero on each side. Reaching a true
+# zero at the edges (rather than trailing off) keeps stray tongues from lifting
+# off beyond the logs and hanging out over the hearth.
+SEED_PLATEAU = 12      # half-width of the full-intensity core
+SEED_TAPER = 8         # cosine falloff width beyond the plateau
 SEED_BASE = [0.0] * COLS
 for _x in range(COLS):
-    _d = abs(_x - XC) / FIRE_HALF
-    if _d >= 1.0:
+    _d = abs(_x - XC)
+    if _d <= SEED_PLATEAU:
+        SEED_BASE[_x] = 1.0
+    elif _d >= SEED_PLATEAU + SEED_TAPER:
         SEED_BASE[_x] = 0.0
     else:
-        SEED_BASE[_x] = 1.0 - _d ** 3 * 0.9   # flat middle, quick drop at edges
+        _t = (_d - SEED_PLATEAU) / SEED_TAPER      # 0 -> 1 across the taper
+        SEED_BASE[_x] = 0.5 * (1.0 + math.cos(math.pi * _t))
 
 sparks = []  # each: [x, y, life]
 
