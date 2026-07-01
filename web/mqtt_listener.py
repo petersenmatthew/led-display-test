@@ -33,6 +33,7 @@ LOCK_FILE = Path("/tmp/led-listener.lock")
 ALLOWED_MODES = {
     "basket",
     "carousel",
+    "fireplace",
     "github_contributions",
     "hello",
     "jaylen",
