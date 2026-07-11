@@ -41,7 +41,7 @@ FRAME_DELAY = 1.0 / 30.0
 # Disk geometry (left side of the panel).
 DISK_CX = 15.5
 DISK_CY = 15.5
-DISK_R = 13.5
+DISK_R = 14.5
 HOLE_R = 2.0              # spindle hole (background shows through)
 HUB_R = 4.0               # silver hub ring around the hole
 DISK_FRAMES = 48          # precomputed rotation steps
