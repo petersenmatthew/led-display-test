@@ -39,6 +39,7 @@ ALLOWED_MODES = {
     "pixel",
     "rainbow",
     "shapes",
+    "spotify",
     "weather",
     "off",
 }
