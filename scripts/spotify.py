@@ -52,7 +52,9 @@ TXT_X0 = 31
 TXT_W = COLS - TXT_X0
 
 SCROLL_PX_PER_S = 12.0
-SCROLL_GAP = 16
+SCROLL_HOLD_START = 1.8   # readable pause before scrolling begins (marquee)
+SCROLL_HOLD_END = 1.0     # pause at the end before snapping back (marquee)
+SCROLL_GAP = 16           # gap between repeats (conveyor)
 
 SPOTIFY_GREEN = (30, 215, 96)
 
@@ -375,7 +377,26 @@ def text_width(font, text):
 
 
 def draw_scrolling_text(canvas, font, y, color, text, t):
-    """Draw text in the right zone; scroll with wraparound when too wide."""
+    """Marquee-style: hold at the start, scroll to the end, hold, snap back."""
+    w = text_width(font, text)
+    if w <= TXT_W:
+        graphics.DrawText(canvas, font, TXT_X0 + (TXT_W - w) // 2, y, color, text)
+        return
+    travel = w - TXT_W
+    scroll_time = travel / SCROLL_PX_PER_S
+    cycle = SCROLL_HOLD_START + scroll_time + SCROLL_HOLD_END
+    tc = t % cycle
+    if tc < SCROLL_HOLD_START:
+        off = 0
+    elif tc < SCROLL_HOLD_START + scroll_time:
+        off = int((tc - SCROLL_HOLD_START) * SCROLL_PX_PER_S)
+    else:
+        off = travel
+    graphics.DrawText(canvas, font, TXT_X0 - off, y, color, text)
+
+
+def draw_conveyor_text(canvas, font, y, color, text, t):
+    """Continuous wraparound scroll: the text loops with a gap, never pausing."""
     w = text_width(font, text)
     if w <= TXT_W:
         graphics.DrawText(canvas, font, TXT_X0 + (TXT_W - w) // 2, y, color, text)
@@ -400,7 +421,7 @@ def draw_frame(canvas, state_snapshot, disk_pts, t):
     white = graphics.Color(230, 230, 235)
     gray = graphics.Color(120, 120, 130)
     draw_scrolling_text(canvas, FONT_TITLE, 8, white, title, t)
-    draw_scrolling_text(canvas, FONT_SMALL, 16, gray, artist, t + 1.7)
+    draw_conveyor_text(canvas, FONT_SMALL, 16, gray, artist, t)
     for y in range(0, 18):
         for x in range(0, TXT_X0):
             canvas.SetPixel(x, y, 0, 0, 0)
@@ -458,12 +479,13 @@ def main():
     start = time.monotonic()
     prev = start
     next_frame_time = start
+    scroll_t0 = start
+    last_text = None
     try:
         while True:
             now = time.monotonic()
             dt = now - prev
             prev = now
-            t = now - start
 
             apply_live_brightness(matrix)
 
@@ -482,6 +504,14 @@ def main():
                     state.duration_ms,
                 )
                 frames = state.frames
+
+            # Restart the marquee from its start-hold whenever the text changes
+            # (new track, state change) so titles are always readable from char 1.
+            text_key = (snapshot[0], snapshot[1])
+            if text_key != last_text:
+                last_text = text_key
+                scroll_t0 = now
+            t = now - scroll_t0
 
             if playing:
                 rot = (rot + dt / SPIN_SECONDS) % 1.0
