@@ -5,8 +5,10 @@ The companion mqtt_listener.py runs on the Pi and acts on the messages.
 """
 
 import fcntl
+import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
@@ -19,9 +21,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 TOPIC_MODE = "dorm/display/mode"
 TOPIC_BRIGHTNESS = "dorm/display/brightness"
+TOPIC_SCHEDULE = "dorm/display/schedule"
 TOPIC_STATUS = "dorm/display/status"
 BRIGHTNESS_FILE = Path("/tmp/led-display-brightness.txt")
 DEFAULT_BRIGHTNESS = 60
+SCHEDULE_FILE = REPO_ROOT / "schedule.json"
+DEFAULT_SCHEDULE = {"enabled": False, "start": "23:00", "end": "07:00"}
 LOCK_FILE = Path("/tmp/led-web.lock")
 
 _instance_lock = None
@@ -97,9 +102,65 @@ def write_brightness(value):
         return False
 
 
+def parse_hhmm(value):
+    """"23:30" -> 1410 minutes past midnight. None if unparseable."""
+    try:
+        hours, minutes = str(value).strip().split(":")
+        hours, minutes = int(hours), int(minutes)
+    except (AttributeError, ValueError):
+        return None
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        return None
+    return hours * 60 + minutes
+
+
+def read_schedule():
+    try:
+        data = json.loads(SCHEDULE_FILE.read_text())
+    except (OSError, ValueError):
+        return dict(DEFAULT_SCHEDULE)
+    if not isinstance(data, dict):
+        return dict(DEFAULT_SCHEDULE)
+    start = data.get("start", DEFAULT_SCHEDULE["start"])
+    end = data.get("end", DEFAULT_SCHEDULE["end"])
+    if parse_hhmm(start) is None or parse_hhmm(end) is None:
+        return dict(DEFAULT_SCHEDULE)
+    return {"enabled": bool(data.get("enabled")), "start": start, "end": end}
+
+
+def write_schedule(schedule):
+    try:
+        SCHEDULE_FILE.write_text(json.dumps(schedule))
+        return True
+    except OSError as exc:
+        app.logger.warning("Could not write schedule %s: %s", SCHEDULE_FILE, exc)
+        return False
+
+
+def in_downtime(schedule, now=None):
+    """True when local time is inside the window. Windows may wrap midnight."""
+    if not schedule.get("enabled"):
+        return False
+    start = parse_hhmm(schedule.get("start"))
+    end = parse_hhmm(schedule.get("end"))
+    if start is None or end is None or start == end:
+        return False
+    now = now or datetime.now()
+    minute_of_day = now.hour * 60 + now.minute
+    if start < end:
+        return start <= minute_of_day < end
+    return minute_of_day >= start or minute_of_day < end
+
+
 @app.route("/")
 def index():
-    return render_template("index.html", initial_brightness=read_brightness())
+    schedule = read_schedule()
+    return render_template(
+        "index.html",
+        initial_brightness=read_brightness(),
+        schedule=schedule,
+        downtime_now=in_downtime(schedule),
+    )
 
 
 @app.route("/favicon.ico")
@@ -149,6 +210,33 @@ def set_brightness():
     if ok:
         cached = write_brightness(value)
     return jsonify(ok=ok, value=value, cached=cached)
+
+
+@app.route("/schedule", methods=["GET", "POST"])
+def set_schedule():
+    if request.method == "GET":
+        schedule = read_schedule()
+        return jsonify(ok=True, schedule=schedule, active=in_downtime(schedule))
+
+    data = request.get_json(silent=True) or request.form
+    current = read_schedule()
+    start = (data.get("start") or current["start"]).strip()
+    end = (data.get("end") or current["end"]).strip()
+    if parse_hhmm(start) is None or parse_hhmm(end) is None:
+        return jsonify(ok=False, error="times must be HH:MM (24-hour)"), 400
+    if start == end:
+        return jsonify(ok=False, error="start and end must differ"), 400
+
+    enabled = data.get("enabled", current["enabled"])
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() in {"1", "true", "on", "yes"}
+    schedule = {"enabled": bool(enabled), "start": start, "end": end}
+
+    ok = publish(TOPIC_SCHEDULE, json.dumps(schedule))
+    saved = False
+    if ok:
+        saved = write_schedule(schedule)
+    return jsonify(ok=ok, schedule=schedule, saved=saved, active=in_downtime(schedule))
 
 
 @app.route("/status", methods=["POST"])
